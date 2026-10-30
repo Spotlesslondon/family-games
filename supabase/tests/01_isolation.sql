@@ -154,12 +154,18 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- 5. Clients cannot write.
 -- ---------------------------------------------------------------------------
+-- On Supabase the authenticated role holds table privileges and RLS alone
+-- blocks the write (zero rows affected, or an RLS violation, both 42501 or
+-- silent); on the local shim the role lacks the privilege outright. Both
+-- count as "could not write".
 do $$
+declare n int;
 begin
   perform pg_temp.become('{"kind":"member","family_id":"aaaaaaaa-0000-0000-0000-000000000001","member_id":"aaaaaaaa-0000-0000-0000-00000000000a"}');
   begin
     update rooms set phase = 'hacked' where id = 'aaaaaaaa-0000-0000-0000-0000000000a1';
-    raise exception 'member was able to update rooms';
+    get diagnostics n = row_count;
+    if n <> 0 then raise exception 'member was able to update rooms'; end if;
   exception
     when insufficient_privilege then null;
   end;

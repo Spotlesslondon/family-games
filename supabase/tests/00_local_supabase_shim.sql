@@ -26,10 +26,7 @@ begin
   end if;
 end $$;
 
-create schema if not exists app;
-
-grant usage on schema public, app, auth to anon, authenticated, service_role;
+grant usage on schema public, auth to anon, authenticated, service_role;
 grant execute on function auth.jwt() to anon, authenticated, service_role;
 alter default privileges in schema public grant select on tables to anon, authenticated;
 alter default privileges in schema public grant all on tables to service_role;
-alter default privileges in schema app grant execute on functions to anon, authenticated, service_role;
