@@ -93,18 +93,21 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- 2. An owner token sees the family's skills but still no private state.
+-- 2. The owner plays too: sees the family's skills, and their own private
+--    state but nobody else's.
 -- ---------------------------------------------------------------------------
 do $$
 declare n int;
 begin
-  perform pg_temp.become('{"kind":"owner","family_id":"aaaaaaaa-0000-0000-0000-000000000001","member_id":"aaaaaaaa-0000-0000-0000-00000000000a"}');
+  perform pg_temp.become('{"kind":"member","member_role":"owner","family_id":"aaaaaaaa-0000-0000-0000-000000000001","member_id":"aaaaaaaa-0000-0000-0000-00000000000a"}');
 
   select count(*) into n from member_skills;
   if n <> 2 then raise exception 'owner sees % skill rows, expected 2', n; end if;
 
   select count(*) into n from room_private;
-  if n <> 0 then raise exception 'owner token can read private state'; end if;
+  if n <> 1 then raise exception 'owner sees % private rows, expected 1 (their own)', n; end if;
+  select count(*) into n from room_private where member_id <> 'aaaaaaaa-0000-0000-0000-00000000000a';
+  if n <> 0 then raise exception 'owner can read another player''s private state'; end if;
 
   reset role;
 end $$;

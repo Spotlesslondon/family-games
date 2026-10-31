@@ -24,9 +24,15 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'service_role') then
     create role service_role nologin bypassrls;
   end if;
+  if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+    create role supabase_auth_admin nologin;
+  end if;
 end $$;
 
 grant usage on schema public, auth to anon, authenticated, service_role;
+-- On Supabase supabase_auth_admin owns the auth schema.
+grant usage on schema auth to supabase_auth_admin;
+grant execute on function auth.jwt() to supabase_auth_admin;
 grant execute on function auth.jwt() to anon, authenticated, service_role;
 alter default privileges in schema public grant select on tables to anon, authenticated;
 alter default privileges in schema public grant all on tables to service_role;
