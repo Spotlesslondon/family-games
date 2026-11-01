@@ -375,6 +375,18 @@ describe("Mr White: word checks", () => {
     expect(tooClose("cream", "ice cream")).toBe(true);
     expect(tooClose("catch", "cat")).toBe(false);
     expect(tooClose("fins", "shark")).toBe(false);
+    // Found at the table: plurals of words ending in "e".
+    expect(tooClose("SANDCASTLES", "sandcastle")).toBe(true);
+    expect(sameWord("horses", "horse")).toBe(true);
+    expect(sameWord("boxes", "box")).toBe(true);
+    expect(sameWord("Holidays", "holiday")).toBe(true);
+    expect(sameWord("shark", "dolphin")).toBe(false);
+    expect(tooClose("icecreamy", "ice cream")).toBe(true);
+    // Every word in the list, typed as a plural, is caught.
+    for (const w of MR_WHITE_PAIRS.flat()) {
+      expect(tooClose(w.toUpperCase() + "S", w)).toBe(true);
+      expect(sameWord(w + "s", w)).toBe(true);
+    }
   });
 
   it("has a clean, unique word list", () => {

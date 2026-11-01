@@ -145,27 +145,29 @@ function votesSoFar(ctx: GameContext, s: MrWhiteState): Record<string, string> {
   return out;
 }
 
+/** Lower case, letters and digits only: "Ice-Cream" is "icecream". */
 function norm(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]/g, "")
-    .replace(/(es|s)$/, "");
+  return s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
 }
 
-/** Forgiving match for a typed word: case, spaces, punctuation and a plural "s". */
+/** The word and its possible singulars: "horses" gives horses, horse, hors; "boxes" gives box. */
+function stems(s: string): string[] {
+  const n = norm(s);
+  return [n, n.replace(/s$/, ""), n.replace(/es$/, "")].filter((x) => x.length > 0);
+}
+
+/** Forgiving match for a typed word: case, spaces, punctuation and a plural "s" or "es". */
 export function sameWord(a: string, b: string): boolean {
-  return norm(a).length > 0 && norm(a) === norm(b);
+  const bs = stems(b);
+  return stems(a).some((x) => bs.includes(x));
 }
 
 /** A clue may not be the player's own word, or contain a long part of it (shark in sharky). */
 export function tooClose(clue: string, word: string): boolean {
   if (sameWord(clue, word)) return true;
   const c = norm(clue);
-  return word
-    .split(/\s+/)
-    .map(norm)
-    .some((part) => part.length >= 4 ? c.includes(part) : part.length > 0 && c === part);
+  const parts = [norm(word), ...word.split(/\s+/).map(norm)];
+  return parts.some((part) => (part.length >= 4 ? c.includes(part) : part.length > 0 && c === part));
 }
 
 /** Clear every vote, for a run-off or a new round. */
