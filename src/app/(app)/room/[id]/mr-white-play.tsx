@@ -2,7 +2,8 @@
 
 // Mr White on a player's phone. Each phase is one screen with one obvious
 // thing to do, in big type: a six year old who reads slowly must be able to
-// play it without help. Clues are said out loud, never typed.
+// play it without help. Clues are typed by default and appear on every phone
+// and the TV; the host can choose spoken clues for children who cannot type.
 
 import { useState } from "react";
 import { initial, message } from "@/lib/client/session";
@@ -13,28 +14,32 @@ export interface Person {
   colour: string;
 }
 
-interface Reveal {
-  mrWhite: string;
-  word: string;
-  votes: Record<string, string>;
-  outcome: { winner: "mr_white" | "players"; how: string; guess?: string };
+type Side = "villager" | "wolf" | "mr_white";
+
+interface Outcome {
+  winner: "villagers" | "hidden" | "mr_white";
+  how: string;
+  guess?: string;
 }
 
 export interface MrWhitePublic {
+  settings?: { wolves: number; mrWhite: boolean; spoken: boolean; mrWhiteChosen: boolean };
   seen?: string[];
   order?: string[];
+  out?: { id: string; side: Side; round: number; guess?: string }[];
+  round?: number;
   turn?: number;
-  rounds?: number;
+  clues?: { id: string; round: number; text: string | null }[];
   candidates?: string[];
   runoff?: boolean;
   voted?: string[];
-  picked?: string;
-  reveal?: Reveal;
+  lastVote?: { round: number; votes: Record<string, string>; outId?: string; tie?: boolean };
+  reveal?: { villagerWord: string; wolfWord: string; sides: Record<string, Side>; outcome: Outcome };
 }
 
 export interface MrWhiteMine {
-  role?: "player" | "mr_white";
   word?: string;
+  mrWhite?: boolean;
   vote?: string | null;
 }
 
@@ -44,9 +49,39 @@ const big = "font-display text-3xl font-semibold leading-tight";
 const primary = "h-16 w-full rounded-full bg-go font-display text-2xl font-bold text-ground disabled:opacity-60";
 const secondary = "h-14 w-full rounded-full border-2 border-line font-display text-xl font-bold disabled:opacity-60";
 
-function Avatar({ p, size = "h-14 w-14 text-2xl" }: { p?: Person; size?: string }) {
+export const SIDE_NAME: Record<Side, string> = { villager: "a Villager", wolf: "a Wolf", mr_white: "Mr White" };
+
+/** Who is hidden this game, in words: "1 Wolf and Mr White". */
+export function hiddenLine(settings?: MrWhitePublic["settings"]): string {
+  if (!settings) return "";
+  const w = settings.wolves;
+  const wolves = w > 0 ? `${w} ${w === 1 ? "Wolf" : "Wolves"}` : "";
+  if (wolves && settings.mrWhite) return `${wolves} and Mr White`;
+  return wolves || (settings.mrWhite ? "Mr White" : "nobody");
+}
+
+/** Who is still hidden, from what everyone has seen: "1 Wolf and Mr White". */
+export function stillHiddenLine(state: MrWhitePublic): string {
+  const out = state.out ?? [];
+  const settings = state.settings;
+  if (!settings) return "";
+  const wolves = settings.wolves - out.filter((o) => o.side === "wolf").length;
+  const mr = settings.mrWhite && !out.some((o) => o.side === "mr_white");
+  return hiddenLine({ ...settings, wolves, mrWhite: mr });
+}
+
+/** Everyone still in the game, in speaking order. */
+export function stillIn(state: MrWhitePublic): string[] {
+  const out = new Set((state.out ?? []).map((o) => o.id));
+  return (state.order ?? []).filter((id) => !out.has(id));
+}
+
+function Avatar({ p, size = "h-14 w-14 text-2xl", faded = false }: { p?: Person; size?: string; faded?: boolean }) {
   return (
-    <span className={`flex shrink-0 items-center justify-center rounded-full font-display font-bold text-ground ${size}`} style={{ background: p?.colour ?? "#A9B0CC" }}>
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-full font-display font-bold text-ground ${size} ${faded ? "opacity-40" : ""}`}
+      style={{ background: p?.colour ?? "#A9B0CC" }}
+    >
       {initial(p?.name ?? "?")}
     </span>
   );
@@ -55,7 +90,7 @@ function Avatar({ p, size = "h-14 w-14 text-2xl" }: { p?: Person; size?: string 
 /** The player's own secret, always one tap away, hidden by default so a neighbour cannot glance at it. */
 function MySecret({ mine }: { mine: MrWhiteMine }) {
   const [shown, setShown] = useState(false);
-  if (!mine.role) return null;
+  if (!mine.word && !mine.mrWhite) return null;
   return (
     <button
       type="button"
@@ -63,9 +98,42 @@ function MySecret({ mine }: { mine: MrWhiteMine }) {
       className="flex min-h-12 items-center justify-between rounded-2xl bg-surface px-4 text-left"
       aria-label={shown ? "Hide my secret" : "Show my secret"}
     >
-      <span className="text-sm font-bold tracking-widest text-muted">{mine.role === "mr_white" ? "YOU ARE" : "YOUR WORD"}</span>
-      <span className="font-display text-xl font-bold text-go">{shown ? (mine.role === "mr_white" ? "Mr White" : mine.word) : "Tap to see"}</span>
+      <span className="text-sm font-bold tracking-widest text-muted">{mine.mrWhite ? "YOU ARE" : "YOUR WORD"}</span>
+      <span className="font-display text-xl font-bold text-go">{shown ? (mine.mrWhite ? "Mr White" : mine.word) : "Tap to see"}</span>
     </button>
+  );
+}
+
+/** Every clue so far, one row per person, so anyone can look back before voting. */
+function ClueBoard({ state, people, me, current }: { state: MrWhitePublic; people: Map<string, Person>; me: string; current?: string }) {
+  const clues = state.clues ?? [];
+  if (state.settings?.spoken) return null;
+  const outSide = new Map((state.out ?? []).map((o) => [o.id, o.side]));
+  return (
+    <ul className="flex flex-col gap-2" aria-label="Clues so far">
+      {(state.order ?? []).map((id) => {
+        const p = people.get(id);
+        const theirs = clues.filter((c) => c.id === id);
+        const side = outSide.get(id);
+        return (
+          <li key={id} className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${id === current ? "bg-surface-2 ring-2 ring-go" : "bg-surface"}`}>
+            <Avatar p={p} size="h-10 w-10 text-lg" faded={!!side} />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className={`text-sm font-bold ${side ? "text-muted" : ""}`}>
+                {id === me ? "You" : (p?.name ?? "Someone")}
+                {side ? ` · out, was ${SIDE_NAME[side]}` : ""}
+              </span>
+              <span className="flex flex-wrap gap-x-3 font-display text-xl font-bold">
+                {theirs.length === 0 && <span className="text-base font-normal text-muted">{id === current ? "thinking..." : "no clue yet"}</span>}
+                {theirs.map((c, i) => (
+                  <span key={i} className={c.text ? "" : "text-base font-normal text-muted"}>{c.text ?? "skipped"}</span>
+                ))}
+              </span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -90,20 +158,31 @@ export function MrWhitePlay({
   const [error, setError] = useState<string | null>(null);
   const [peek, setPeek] = useState(false);
   const [guess, setGuess] = useState("");
+  const [clue, setClue] = useState("");
   const isHost = me === hostId;
   const name = (id?: string) => (id === me ? "You" : (id && people.get(id)?.name) || "Someone");
-  const players = state.order ?? [];
+  const everyone = state.order ?? [];
+  const left = stillIn(state);
+  const amOut = !left.includes(me);
+  const spoken = !!state.settings?.spoken;
 
-  async function send(type: string, payload?: Record<string, unknown>) {
-    if (busy) return;
+  async function send(type: string, payload?: Record<string, unknown>): Promise<boolean> {
+    if (busy) return false;
     setBusy(true);
     setError(null);
     const out = await act(type, payload);
     setBusy(false);
-    if (out && out.ok === false && out.reason) setError(message(out.reason));
+    if (out && out.ok === false && out.reason) {
+      setError(message(out.reason));
+      return false;
+    }
+    return true;
   }
 
   const err = <p role="alert" aria-live="polite" className="min-h-7 text-center font-bold text-alert">{error ?? ""}</p>;
+  const outBanner = amOut && (
+    <p className="rounded-2xl bg-surface px-4 py-3 text-center font-bold text-muted">You are out. Watch, and see who wins.</p>
+  );
 
   // ---- 1. Everyone looks at their secret ------------------------------------
   if (phase === "reveal") {
@@ -119,22 +198,23 @@ export function MrWhitePlay({
                 <p className="text-lg text-muted">Keep your screen hidden from everyone else.</p>
                 <button type="button" onClick={() => setPeek(true)} className={primary}>Show my secret</button>
               </>
-            ) : mine.role === "mr_white" ? (
+            ) : mine.mrWhite ? (
               <>
                 <span className="text-sm font-bold tracking-widest text-muted">YOU ARE</span>
                 <span className="font-display text-5xl font-bold text-go">Mr White</span>
-                <p className="text-lg">You do not know the word. Listen to the others and pretend you do.</p>
+                <p className="text-lg">You have no word. Read the others&apos; clues and pretend you do.</p>
               </>
             ) : (
               <>
                 <span className="text-sm font-bold tracking-widest text-muted">YOUR SECRET WORD</span>
                 <span className="font-display text-5xl font-bold text-go">{mine.word}</span>
-                <p className="text-lg">One of you is Mr White and does not know it. Do not say it out loud.</p>
+                <p className="text-lg">A few players have a different word, and nobody knows if it is them. Never say your word.</p>
               </>
             )}
           </div>
         )}
-        <p className="text-center text-muted">{seen.length} of {players.length} have looked</p>
+        <p className="text-center text-muted">Hidden this game: {hiddenLine(state.settings)}</p>
+        <p className="text-center text-muted">{seen.length} of {everyone.length} have looked</p>
         {err}
         <div className="mt-auto flex flex-col gap-3">
           {!done && peek && (
@@ -148,40 +228,69 @@ export function MrWhitePlay({
     );
   }
 
-  // ---- 2. Clues, out loud, in turn ------------------------------------------
+  // ---- 2. Clues, in turn: typed, or said out loud ---------------------------
   if (phase === "clues") {
     const turn = state.turn ?? 0;
-    const speaker = players[turn];
-    const mine_turn = speaker === me;
+    const speaker = left[turn];
+    const myTurn = speaker === me;
     return (
-      <section className="flex flex-1 flex-col gap-5">
-        <MySecret mine={mine} />
-        <h2 className={big}>{mine_turn ? "Your turn" : `${name(speaker)}'s turn`}</h2>
-        <div className="flex flex-col items-center gap-4 rounded-3xl bg-surface px-5 py-7 text-center">
-          <Avatar p={people.get(speaker)} size="h-24 w-24 text-5xl" />
-          <p className="text-xl font-bold">
-            {mine_turn
-              ? mine.role === "mr_white"
-                ? "Say one word out loud. Bluff!"
-                : "Say one word out loud that fits your secret word."
-              : `Listen to ${name(speaker)}'s word.`}
-          </p>
-        </div>
-        <ol className="flex flex-wrap gap-2" aria-label="Order">
-          {players.map((id, i) => (
-            <li key={id} className={`rounded-full px-3 py-1.5 text-sm font-bold ${i === turn ? "bg-go text-ground" : i < turn ? "bg-surface-2 text-muted line-through" : "bg-surface"}`}>
-              {name(id)}
-            </li>
-          ))}
-        </ol>
-        {err}
+      <section className="flex flex-1 flex-col gap-4">
+        {outBanner || <MySecret mine={mine} />}
+        <h2 className={big}>{myTurn ? "Your turn" : `${name(speaker)}'s turn`}</h2>
+        {myTurn && !spoken ? (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (await send("clue", { turn, text: clue })) setClue("");
+            }}
+            className="flex flex-col gap-3"
+          >
+            <p className="text-lg">{mine.mrWhite ? "Type one word that fits the others' clues. Bluff!" : "Type one word that fits your secret word. Not the word itself."}</p>
+            <input
+              className="h-16 rounded-2xl border-2 border-surface-2 bg-surface px-4 font-display text-2xl font-bold outline-none focus:border-go"
+              value={clue}
+              onChange={(e) => setClue(e.target.value.slice(0, 20))}
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="send"
+              aria-label="Your clue"
+              required
+            />
+            {err}
+            <button type="submit" disabled={busy || !clue.trim()} className={primary}>Send</button>
+          </form>
+        ) : spoken ? (
+          <div className="flex flex-col items-center gap-4 rounded-3xl bg-surface px-5 py-7 text-center">
+            <Avatar p={people.get(speaker)} size="h-24 w-24 text-5xl" />
+            <p className="text-xl font-bold">
+              {myTurn
+                ? mine.mrWhite
+                  ? "Say one word out loud. Bluff!"
+                  : "Say one word out loud that fits your secret word."
+                : `Listen to ${name(speaker)}'s word.`}
+            </p>
+          </div>
+        ) : null}
+        <ClueBoard state={state} people={people} me={me} current={speaker} />
+        {spoken && (
+          <ol className="flex flex-wrap gap-2" aria-label="Order">
+            {left.map((id, i) => (
+              <li key={id} className={`rounded-full px-3 py-1.5 text-sm font-bold ${i === turn ? "bg-go text-ground" : i < turn ? "bg-surface-2 text-muted line-through" : "bg-surface"}`}>
+                {name(id)}
+              </li>
+            ))}
+          </ol>
+        )}
+        {!(myTurn && !spoken) && err}
         <div className="mt-auto flex flex-col gap-3">
-          {mine_turn && (
+          {myTurn && spoken && (
             <button type="button" disabled={busy} onClick={() => send("clue_done", { turn })} className={primary}>I have said it</button>
           )}
-          {isHost && !mine_turn && (
+          {isHost && !myTurn && (
             <button type="button" disabled={busy} onClick={() => send("clue_done", { turn })} className={secondary}>
-              {name(speaker)} has said it
+              {spoken ? `${name(speaker)} has said it` : `Skip ${name(speaker)}'s turn`}
             </button>
           )}
         </div>
@@ -192,10 +301,11 @@ export function MrWhitePlay({
   // ---- 3. Another round, or vote ---------------------------------------------
   if (phase === "between") {
     return (
-      <section className="flex flex-1 flex-col gap-5">
-        <MySecret mine={mine} />
-        <h2 className={big}>Round {state.rounds ?? 1} done</h2>
+      <section className="flex flex-1 flex-col gap-4">
+        {outBanner || <MySecret mine={mine} />}
+        <h2 className={big}>Clues done</h2>
         <p className="text-lg text-muted">{isHost ? "Does everyone have a hunch? Go round again, or vote." : "The host is deciding: another round, or the vote."}</p>
+        <ClueBoard state={state} people={people} me={me} />
         {err}
         {isHost && (
           <div className="mt-auto flex flex-col gap-3">
@@ -207,47 +317,53 @@ export function MrWhitePlay({
     );
   }
 
-  // ---- 4. Who is Mr White? ---------------------------------------------------
+  // ---- 4. The vote ----------------------------------------------------------
   if (phase === "vote") {
     const voted = state.voted ?? [];
-    const choices = (state.candidates ?? players).filter((id) => id !== me);
+    const choices = (state.candidates ?? left).filter((id) => id !== me);
     const my = mine.vote ?? null;
     return (
-      <section className="flex flex-1 flex-col gap-5">
-        <MySecret mine={mine} />
-        <h2 className={big}>{state.runoff ? "It's a tie. Vote again" : "Who is Mr White?"}</h2>
-        <p className="text-muted">{my ? `You voted for ${name(my)}. You can change it until everyone has voted.` : "Tap who you think it is. Nobody sees your vote until the end."}</p>
-        <ul className="grid grid-cols-2 gap-3">
-          {choices.map((id) => (
-            <li key={id}>
-              <button
-                type="button"
-                disabled={busy}
-                aria-pressed={my === id}
-                onClick={() => send("vote", { memberId: id })}
-                className={`flex w-full flex-col items-center gap-2 rounded-3xl border-4 px-3 py-4 ${my === id ? "border-go bg-surface-2" : "border-transparent bg-surface"}`}
-              >
-                <Avatar p={people.get(id)} />
-                <span className="text-lg font-bold">{name(id)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <p className="text-center text-muted">{voted.length} of {players.length} have voted</p>
+      <section className="flex flex-1 flex-col gap-4">
+        {outBanner || <MySecret mine={mine} />}
+        <h2 className={big}>{state.runoff ? "It's a tie. Vote again" : "Who has a different word?"}</h2>
+        {!amOut && (
+          <>
+            <p className="text-muted">{my ? `You voted for ${name(my)}. You can change it until everyone has voted.` : "Vote for who you think has a different word, or no word. Nobody sees your vote until the count."}</p>
+            <ul className="grid grid-cols-2 gap-3">
+              {choices.map((id) => (
+                <li key={id}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-pressed={my === id}
+                    onClick={() => send("vote", { memberId: id })}
+                    className={`flex w-full flex-col items-center gap-2 rounded-3xl border-4 px-3 py-4 ${my === id ? "border-go bg-surface-2" : "border-transparent bg-surface"}`}
+                  >
+                    <Avatar p={people.get(id)} />
+                    <span className="text-lg font-bold">{name(id)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <p className="text-center text-muted">{voted.length} of {left.length} have voted</p>
         {err}
-        {isHost && voted.length > 0 && voted.length < players.length && (
+        <ClueBoard state={state} people={people} me={me} />
+        {isHost && voted.length > 0 && voted.length < left.length && (
           <button type="button" disabled={busy} onClick={() => send("count_votes")} className={`${secondary} mt-auto`}>Count the votes now</button>
         )}
       </section>
     );
   }
 
-  // ---- 5. Caught: Mr White's one guess ----------------------------------------
+  // ---- 5. Mr White voted out: his one guess ----------------------------------
   if (phase === "guess") {
-    const amMrWhite = mine.role === "mr_white";
+    const caught = (state.out ?? [])[(state.out ?? []).length - 1];
+    const amMrWhite = caught?.id === me;
     return (
       <section className="flex flex-1 flex-col gap-5">
-        <h2 className={big}>{amMrWhite ? "You were caught!" : `${name(state.picked)} is Mr White!`}</h2>
+        <h2 className={big}>{amMrWhite ? "You were caught!" : `${name(caught?.id)} is Mr White!`}</h2>
         {amMrWhite ? (
           <form
             onSubmit={(e) => {
@@ -256,7 +372,7 @@ export function MrWhitePlay({
             }}
             className="flex flex-col gap-4"
           >
-            <p className="text-lg">Guess the secret word to steal the win. One go.</p>
+            <p className="text-lg">Guess the word most players have, to win on your own. One go.</p>
             <input
               className="h-16 rounded-2xl border-2 border-surface-2 bg-surface px-4 font-display text-2xl font-bold outline-none focus:border-go"
               value={guess}
@@ -270,7 +386,42 @@ export function MrWhitePlay({
             <button type="submit" disabled={busy || !guess.trim()} className={primary}>Guess</button>
           </form>
         ) : (
-          <p className="text-xl">They get one guess at the word. If they get it, they still win.</p>
+          <p className="text-xl">Mr White gets one guess at the word most of you have. If it is right, Mr White wins.</p>
+        )}
+        <ClueBoard state={state} people={people} me={me} />
+      </section>
+    );
+  }
+
+  // ---- 6. Who went out ------------------------------------------------------
+  if (phase === "out") {
+    const v = state.lastVote;
+    const gone = v?.outId ? (state.out ?? []).find((o) => o.id === v.outId) : undefined;
+    return (
+      <section className="flex flex-1 flex-col gap-5">
+        {gone ? (
+          <div className="flex flex-col items-center gap-3 rounded-3xl bg-surface px-5 py-7 text-center">
+            <Avatar p={people.get(gone.id)} size="h-20 w-20 text-4xl" />
+            <h2 className={big}>{gone.id === me ? "You are out" : `${name(gone.id)} is out`}</h2>
+            <p className="font-display text-2xl font-bold text-go">{gone.id === me ? "You were" : "They were"} {SIDE_NAME[gone.side]}</p>
+            {gone.guess !== undefined && <p className="text-lg">Mr White guessed &ldquo;{gone.guess}&rdquo;. Wrong!</p>}
+          </div>
+        ) : (
+          <h2 className={big}>A tie again. Nobody is out this round.</h2>
+        )}
+        <p className="text-center text-lg font-bold">Still hidden: {stillHiddenLine(state)}</p>
+        {v && (
+          <ul className="flex flex-col gap-1 text-muted" aria-label="Votes">
+            {Object.entries(v.votes).map(([from, to]) => (
+              <li key={from}>{name(from)} voted for {name(to)}</li>
+            ))}
+          </ul>
+        )}
+        {err}
+        {isHost ? (
+          <button type="button" disabled={busy} onClick={() => send("next_round")} className={`${primary} mt-auto`}>Next round of clues</button>
+        ) : (
+          <p className="mt-auto text-center text-muted">Waiting for the host to start the next round</p>
         )}
       </section>
     );
@@ -279,7 +430,7 @@ export function MrWhitePlay({
   return null;
 }
 
-/** The end of a game: who won, who Mr White was, the word, and who voted for whom. */
+/** The end of a game: who won, both words, and everyone's side. */
 export function MrWhiteResults({
   state,
   me,
@@ -297,17 +448,17 @@ export function MrWhiteResults({
   const r = state.reveal;
   if (!r) return null;
   const name = (id?: string) => (id === me ? "You" : (id && people.get(id)?.name) || "Someone");
-  const mrWhiteWon = r.outcome.winner === "mr_white";
-  const iWasMrWhite = r.mrWhite === me;
-  const iWon = mrWhiteWon === iWasMrWhite;
+  const mySide = r.sides[me];
+  const outIds = new Set((state.out ?? []).map((o) => o.id));
+  const iWon =
+    r.outcome.winner === "villagers" ? mySide === "villager" : r.outcome.winner === "mr_white" ? mySide === "mr_white" : mySide === "wolf" || (mySide === "mr_white" && !outIds.has(me));
+  const headline = r.outcome.winner === "villagers" ? "The Villagers win" : r.outcome.winner === "mr_white" ? "Mr White wins" : "The hidden players win";
   const why =
-    r.outcome.how === "guessed"
-      ? `Caught, but guessed the word: "${r.outcome.guess}".`
-      : r.outcome.how === "caught"
-        ? `Caught! Their guess was "${r.outcome.guess}".`
-        : r.outcome.how === "tie"
-          ? "The vote was a tie, twice. Mr White slipped away."
-          : `Everyone picked ${name(state.picked)}, who was innocent.`;
+    r.outcome.winner === "villagers"
+      ? "Every Wolf and Mr White was found."
+      : r.outcome.winner === "mr_white"
+        ? `Caught, but guessed the word: "${r.outcome.guess}".`
+        : "Only one Villager was left.";
 
   async function go(type: string, payload?: Record<string, unknown>) {
     if (busy) return;
@@ -316,31 +467,46 @@ export function MrWhiteResults({
     setBusy(false);
   }
 
+  const bySide = (side: Side) => (state.order ?? []).filter((id) => r.sides[id] === side);
   return (
-    <section className="flex flex-1 flex-col gap-5">
-      <h2 className="font-display text-4xl font-bold leading-tight text-go">{iWon ? "You win!" : mrWhiteWon ? "Mr White wins" : "The players win"}</h2>
-      <div className="flex items-center gap-4 rounded-3xl bg-surface px-5 py-5">
-        <Avatar p={people.get(r.mrWhite)} size="h-16 w-16 text-3xl" />
-        <div className="flex flex-col">
-          <span className="text-sm font-bold tracking-widest text-muted">MR WHITE WAS</span>
-          <span className="font-display text-2xl font-bold">{name(r.mrWhite)}</span>
+    <section className="flex flex-1 flex-col gap-4">
+      <h2 className="font-display text-4xl font-bold leading-tight text-go">{iWon ? "You win!" : headline}</h2>
+      <p className="text-lg">{why}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1 rounded-3xl bg-surface px-4 py-4">
+          <span className="text-xs font-bold tracking-widest text-muted">VILLAGERS HAD</span>
+          <span className="font-display text-2xl font-bold text-go">{r.villagerWord}</span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-3xl bg-surface px-4 py-4">
+          <span className="text-xs font-bold tracking-widest text-muted">WOLVES HAD</span>
+          <span className="font-display text-2xl font-bold">{r.wolfWord}</span>
         </div>
       </div>
-      <div className="flex flex-col gap-1 rounded-3xl bg-surface px-5 py-5">
-        <span className="text-sm font-bold tracking-widest text-muted">THE WORD WAS</span>
-        <span className="font-display text-3xl font-bold text-go">{r.word}</span>
-      </div>
-      <p className="text-lg">{why}</p>
-      <ul className="flex flex-col gap-1 text-muted" aria-label="Votes">
-        {Object.entries(r.votes).map(([from, to]) => (
-          <li key={from}>
-            {name(from)} voted for {name(to)}
-          </li>
-        ))}
-      </ul>
+      {(["wolf", "mr_white", "villager"] as const).map((side) =>
+        bySide(side).length ? (
+          <div key={side} className="flex flex-col gap-2">
+            <span className="text-xs font-bold tracking-widest text-muted">{side === "wolf" ? "WOLVES" : side === "mr_white" ? "MR WHITE" : "VILLAGERS"}</span>
+            <ul className="flex flex-wrap gap-3">
+              {bySide(side).map((id) => (
+                <li key={id} className="flex items-center gap-2 rounded-full bg-surface py-1 pl-1 pr-4">
+                  <Avatar p={people.get(id)} size="h-9 w-9 text-base" faded={outIds.has(id)} />
+                  <span className="font-bold">{name(id)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null
+      )}
       {me === hostId ? (
         <div className="mt-auto flex flex-col gap-3">
-          <button type="button" disabled={busy} onClick={() => go("start_game", { gameId: "mr-white" })} className={primary}>Play again</button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => go("start_game", { gameId: "mr-white", options: { mrWhite: state.settings?.mrWhiteChosen !== false, spoken: !!state.settings?.spoken } })}
+            className="h-16 w-full rounded-full bg-go font-display text-2xl font-bold text-ground disabled:opacity-60"
+          >
+            Play again
+          </button>
           <button type="button" disabled={busy} onClick={() => go("back_to_lobby")} className={secondary}>Back to the room</button>
         </div>
       ) : (

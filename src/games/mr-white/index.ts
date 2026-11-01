@@ -1,140 +1,249 @@
-// Mr White: everyone gets the same secret word, except one player, Mr White,
-// who gets nothing and has to bluff. Around the table, each player says one
-// word that fits. Then everyone votes for who they think Mr White is.
+// Mr White, version 2: two words, two sides, and a player with no word.
 //
-// Rules for the first family table test (the CEO seat owns the rules and may
-// change any of these; each is one place in this file):
-//  1. One Mr White, picked at random. Three players at least.
-//  2. Clues are said out loud, not typed, so slow readers and spellers are
-//     never behind. The app shows whose turn it is. Mr White never goes first.
-//  3. After each full round of clues the host chooses another round or the vote.
-//  4. Everyone votes for someone else, in secret. Votes are shown at the reveal.
-//     A tie goes to one run-off between the tied players; a second tie means
-//     Mr White escapes.
-//  5. If the vote catches Mr White, they get one guess at the word. Right:
-//     Mr White steals the win. Wrong: everyone else wins.
-//     If the vote picks the wrong person, Mr White wins.
-//  6. Points: Mr White wins 3, otherwise every other player gets 1.
+// Rules (Joshua's calls of 1 November 2026; the CEO seat owns the rules and
+// may change any of these, each is one place in this file):
+//  1. Most players (the Villagers) get one word of a pair, for example shark.
+//     A few (the Wolves) get the other word, dolphin. Nobody is told
+//     which side they are on: a Wolf only finds out by listening.
+//  2. Mr White is on by default (the host can switch him off) from 5 players
+//     up. Mr White gets no word and knows it.
+//     How many are hidden: 3 to 4 players, 1; 5 to 6, 2; 7 to 10, 3; 11 to
+//     12, 4. Mr White, when in, is one of them; the rest are Wolves.
+//  3. Clues are typed by default: in turn, each player types one word that
+//     fits their word, and every phone and the TV shows it at once. Not their
+//     own word, nothing anyone has already said. Mr White never goes first.
+//     The host can choose "Say clues out loud" instead, for tables with
+//     children who cannot type yet: then the app only shows whose turn it is.
+//  4. After a round of clues the host chooses another round or the vote. In
+//     the vote everyone still in votes for someone else, in secret. The most
+//     votes is out, and everyone sees which side they were on, never their
+//     word. A tie gets one run-off; a second tie means nobody is out.
+//  5. If the person voted out is Mr White, he gets one guess at the Villagers'
+//     word. Right: Mr White wins on his own. Wrong: he is out, play goes on.
+//  6. The Villagers win when every Wolf and Mr White is out. The hidden
+//     players win when only one Villager is left.
+//  7. Points (not saved yet): Villagers win, 2 each. Hidden players win: 4 to
+//     each Wolf, 6 to Mr White if still in. Mr White guesses: 6 to him.
 //
-// What each phone may see: its own word (or "You are Mr White") lives in that
-// player's private state only. The shared state holds nothing secret until
-// the game ends, because every phone and the TV can read it.
+// What each phone may see: its own word, or that it is Mr White, lives in that
+// player's private state only, with nothing that tells the side. Nobody's
+// private state holds the side either: the server works it out each turn,
+// because the Villagers' word is the one most players hold. The shared state
+// holds sides only of players already out, and both words only at the end.
 
 import { registerGame } from "@/engine/registry";
 import { pick, shuffle } from "@/engine/rng";
 import { accept, noop, reject, type Action, type GameContext, type GameModule, type TurnResult } from "@/engine/types";
-import { MR_WHITE_WORDS } from "./words";
+import { MR_WHITE_PAIRS } from "./words";
 
 export const MR_WHITE = "mr-white";
 
-type Phase = "reveal" | "clues" | "between" | "vote" | "guess" | "done";
+type Phase = "reveal" | "clues" | "between" | "vote" | "guess" | "out" | "done";
+export type Side = "villager" | "wolf" | "mr_white";
 
 export type Outcome =
-  | { winner: "mr_white"; how: "wrong_person" | "tie" | "guessed"; guess?: string }
-  | { winner: "players"; how: "caught"; guess: string };
+  | { winner: "villagers"; how: "all_found" }
+  | { winner: "hidden"; how: "survived" }
+  | { winner: "mr_white"; how: "guessed"; guess: string };
+
+export interface Settings {
+  /** How many Wolves (not counting Mr White). */
+  wolves: number;
+  mrWhite: boolean;
+  /** True when clues are said out loud instead of typed. */
+  spoken: boolean;
+  /** What the host chose, kept for "Play again" (Mr White needs 5 players). */
+  mrWhiteChosen: boolean;
+}
+
+export interface Clue {
+  id: string;
+  round: number;
+  /** Null when the host moved a stuck turn on. */
+  text: string | null;
+}
+
+export interface OutPlayer {
+  id: string;
+  side: Side;
+  round: number;
+  /** Mr White's guess, when he was voted out. */
+  guess?: string;
+}
 
 export interface MrWhiteState {
   [key: string]: unknown;
+  settings: Settings;
   /** Who has looked at their word (reveal phase). */
   seen: string[];
-  /** Speaking order for clues. */
+  /** Everyone in the game, in speaking order. Players who are out are skipped. */
   order: string[];
-  /** Index into order of who speaks now (clues phase). */
+  out: OutPlayer[];
+  /** The round of clues now being played, from 1. */
+  round: number;
+  /** Index into the players still in of who gives a clue now. */
   turn: number;
-  /** Rounds of clues completed. */
-  rounds: number;
-  /** Who may be voted for: everyone, or the tied players in a run-off. */
+  /** Typed clues, every round, in order. Empty when clues are spoken. */
+  clues: Clue[];
   candidates: string[];
   runoff: boolean;
-  /** Who has voted, never whom, until the reveal. */
+  /** Who has voted, never whom, until the count. */
   voted: string[];
-  /** The person the vote picked. */
-  picked?: string;
+  /** The last count, shown to everyone: all votes, and who went out, or a tie. */
+  lastVote?: { round: number; votes: Record<string, string>; outId?: string; tie?: boolean };
   /** Filled in only when the game ends. */
-  reveal?: { mrWhite: string; word: string; votes: Record<string, string>; outcome: Outcome };
+  reveal?: { villagerWord: string; wolfWord: string; sides: Record<string, Side>; outcome: Outcome };
 }
 
 const MAX_GUESS = 40;
+const MAX_CLUE = 20;
+
+/** How many are hidden among the players, and whether Mr White is one of them. */
+export function hiddenCounts(players: number, mrWhiteOn: boolean): { wolves: number; mrWhite: boolean } {
+  const hidden = players <= 4 ? 1 : players <= 6 ? 2 : players <= 10 ? 3 : 4;
+  const mrWhite = mrWhiteOn && players >= 5;
+  return { wolves: hidden - (mrWhite ? 1 : 0), mrWhite };
+}
 
 function st(ctx: GameContext): MrWhiteState {
   return ctx.room.state as MrWhiteState;
 }
 
-function ids(ctx: GameContext): string[] {
-  return ctx.players.map((p) => p.id);
+function stillIn(s: MrWhiteState): string[] {
+  const out = new Set(s.out.map((o) => o.id));
+  return s.order.filter((id) => !out.has(id));
 }
 
-/** Server-side truth from the private map: who is Mr White and the word. */
-function secrets(ctx: GameContext): { mrWhite: string; word: string } {
-  let mrWhite = "";
-  let word = "";
-  for (const [id, s] of Object.entries(ctx.private)) {
-    if (!ids(ctx).includes(id)) continue;
-    if (s.role === "mr_white") mrWhite = id;
-    if (s.role === "player" && typeof s.word === "string") word = s.word;
+/**
+ * Server-side truth from the private map. The Villagers' word is the one most
+ * players hold: there are always more Villagers than Wolves.
+ */
+function secrets(ctx: GameContext, s: MrWhiteState): { villagerWord: string; wolfWord: string; sides: Record<string, Side> } {
+  const counts = new Map<string, number>();
+  for (const id of s.order) {
+    const w = ctx.private[id]?.word;
+    if (typeof w === "string") counts.set(w, (counts.get(w) ?? 0) + 1);
   }
-  return { mrWhite, word };
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const villagerWord = ranked[0]?.[0] ?? "";
+  const wolfWord = ranked[1]?.[0] ?? "";
+  const sides: Record<string, Side> = {};
+  for (const id of s.order) {
+    const p = ctx.private[id] ?? {};
+    sides[id] = p.mrWhite === true ? "mr_white" : p.word === villagerWord ? "villager" : "wolf";
+  }
+  return { villagerWord, wolfWord, sides };
 }
 
-/** Votes are private to each voter until the reveal. */
-function votesSoFar(ctx: GameContext): Record<string, string> {
+/** Votes are private to each voter until the count. */
+function votesSoFar(ctx: GameContext, s: MrWhiteState): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const id of ids(ctx)) {
+  for (const id of stillIn(s)) {
     const v = ctx.private[id]?.vote;
     if (typeof v === "string") out[id] = v;
   }
   return out;
 }
 
-/** Forgiving match for a spoken-then-typed word: case, spaces, punctuation and a plural "s". */
+function norm(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]/g, "")
+    .replace(/(es|s)$/, "");
+}
+
+/** Forgiving match for a typed word: case, spaces, punctuation and a plural "s". */
 export function sameWord(a: string, b: string): boolean {
-  const norm = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[^a-z0-9]/g, "")
-      .replace(/(es|s)$/, "");
   return norm(a).length > 0 && norm(a) === norm(b);
 }
 
-function finish(ctx: GameContext, s: MrWhiteState, outcome: Outcome, extraPrivate = {}): TurnResult {
-  const { mrWhite, word } = secrets(ctx);
+/** A clue may not be the player's own word, or contain a long part of it (shark in sharky). */
+export function tooClose(clue: string, word: string): boolean {
+  if (sameWord(clue, word)) return true;
+  const c = norm(clue);
+  return word
+    .split(/\s+/)
+    .map(norm)
+    .some((part) => part.length >= 4 ? c.includes(part) : part.length > 0 && c === part);
+}
+
+/** Clear every vote, for a run-off or a new round. */
+function clearedVotes(ctx: GameContext, s: MrWhiteState): Record<string, Record<string, unknown>> {
+  const cleared: Record<string, Record<string, unknown>> = {};
+  for (const id of s.order) cleared[id] = { ...ctx.private[id], vote: null };
+  return cleared;
+}
+
+function finish(ctx: GameContext, s: MrWhiteState, outcome: Outcome, extra: { private?: Record<string, Record<string, unknown>> } = {}): TurnResult {
+  const { villagerWord, wolfWord, sides } = secrets(ctx, s);
   return accept({
     phase: "done",
-    state: { ...s, reveal: { mrWhite, word, votes: votesSoFar(ctx), outcome } },
-    private: extraPrivate,
+    state: { ...s, reveal: { villagerWord, wolfWord, sides, outcome } },
+    private: extra.private,
     events: [{ type: "mr_white_result", payload: { winner: outcome.winner, how: outcome.how } }],
   });
 }
 
-/** Count the votes; a winner, a run-off, or (second tie) Mr White escapes. */
+/** After someone goes out: has a side won? */
+function winner(ctx: GameContext, s: MrWhiteState): Outcome | null {
+  const { sides } = secrets(ctx, s);
+  const left = stillIn(s);
+  const hidden = left.filter((id) => sides[id] !== "villager").length;
+  const villagers = left.length - hidden;
+  if (hidden === 0) return { winner: "villagers", how: "all_found" };
+  if (villagers <= 1) return { winner: "hidden", how: "survived" };
+  return null;
+}
+
+/** The next round of clues starts, with fresh votes. */
+function nextRound(ctx: GameContext, s: MrWhiteState, phase: Phase = "clues"): TurnResult {
+  return accept({
+    phase,
+    state: { ...s, round: s.round + 1, turn: 0, candidates: [], runoff: false, voted: [] },
+    private: clearedVotes(ctx, s),
+  });
+}
+
+/** Count the votes: someone goes out, a run-off, or (second tie) nobody. */
 function tally(ctx: GameContext, s: MrWhiteState): TurnResult {
-  const votes = votesSoFar(ctx);
+  const votes = votesSoFar(ctx, s);
   const counts = new Map<string, number>();
   for (const target of Object.values(votes)) counts.set(target, (counts.get(target) ?? 0) + 1);
   const top = Math.max(0, ...counts.values());
   const leaders = [...counts.entries()].filter(([, n]) => n === top).map(([id]) => id);
-  const { mrWhite } = secrets(ctx);
 
-  if (leaders.length === 0 || (leaders.length > 1 && s.runoff)) {
-    return finish(ctx, s, { winner: "mr_white", how: "tie" });
-  }
-  if (leaders.length > 1) {
+  if (leaders.length > 1 && !s.runoff) {
     // One run-off between the tied players. Earlier votes are cleared.
-    const cleared: Record<string, Record<string, unknown>> = {};
-    for (const id of ids(ctx)) cleared[id] = { ...ctx.private[id], vote: null };
     return accept({
       phase: "vote",
-      state: { ...s, candidates: leaders, runoff: true, voted: [] },
-      private: cleared,
+      state: { ...s, candidates: leaders, runoff: true, voted: [], lastVote: { round: s.round, votes, tie: true } },
+      private: clearedVotes(ctx, s),
       events: [{ type: "mr_white_runoff", payload: { between: leaders } }],
     });
   }
-  const picked = leaders[0];
-  if (picked !== mrWhite) {
-    return finish(ctx, { ...s, picked }, { winner: "mr_white", how: "wrong_person" });
+  if (leaders.length !== 1) {
+    // A second tie (or no votes at all): nobody is out this round.
+    return nextRound(ctx, { ...s, lastVote: { round: s.round, votes, tie: true } }, "out");
   }
-  return accept({ phase: "guess", state: { ...s, picked }, events: [{ type: "mr_white_caught" }] });
+
+  const outId = leaders[0];
+  const { sides } = secrets(ctx, s);
+  const side = sides[outId];
+  const next: MrWhiteState = { ...s, out: [...s.out, { id: outId, side, round: s.round }], lastVote: { round: s.round, votes, outId } };
+  if (side === "mr_white") {
+    return accept({ phase: "guess", state: next, events: [{ type: "mr_white_caught", memberId: outId }] });
+  }
+  const won = winner(ctx, next);
+  if (won) return finish(ctx, next, won);
+  return nextRound(ctx, next, "out");
+}
+
+/** Move the clue turn on after a clue (typed, spoken or skipped). */
+function nextTurn(s: MrWhiteState, clues: Clue[]): TurnResult {
+  const turn = s.turn + 1;
+  if (turn < stillIn(s).length) return accept({ state: { ...s, clues, turn } });
+  return accept({ phase: "between", state: { ...s, clues, turn: 0 } });
 }
 
 export const mrWhite: GameModule = {
@@ -148,22 +257,45 @@ export const mrWhite: GameModule = {
     between: { waitsFor: "host" },
     vote: { waitsFor: "all" },
     guess: { waitsFor: "one" },
+    out: { waitsFor: "host" },
     done: { waitsFor: "none" },
   },
 
-  setup(ctx) {
-    const players = ids(ctx);
+  setup(ctx, options) {
+    const players = ctx.players.map((p) => p.id);
     if (players.length < 3) return reject("too_few_players");
-    const mr = pick(players, ctx.rng);
-    const word = pick(MR_WHITE_WORDS, ctx.rng);
-    // Mr White never speaks first: they would have nothing to copy.
+    const mrWhiteOn = options?.mrWhite !== false;
+    const spoken = options?.spoken === true;
+    const counts = hiddenCounts(players.length, mrWhiteOn);
+
+    const pair = pick(MR_WHITE_PAIRS, ctx.rng);
+    const [villagerWord, wolfWord] = ctx.rng() < 0.5 ? [pair[0], pair[1]] : [pair[1], pair[0]];
+    const dealt = shuffle(players, ctx.rng);
+    const mr = counts.mrWhite ? dealt[0] : null;
+    const wolves = new Set(dealt.slice(counts.mrWhite ? 1 : 0, (counts.mrWhite ? 1 : 0) + counts.wolves));
+
+    // Mr White never gives the first clue: he would have nothing to go on.
     let order = shuffle(players, ctx.rng);
-    if (order[0] === mr) order = [...order.slice(1), mr];
+    if (mr && order[0] === mr) order = [...order.slice(1), mr];
 
+    // Wolves and Villagers get exactly the same shape: only the word differs.
     const priv: Record<string, Record<string, unknown>> = {};
-    for (const id of players) priv[id] = id === mr ? { role: "mr_white", vote: null } : { role: "player", word, vote: null };
+    for (const id of players) {
+      priv[id] = id === mr ? { mrWhite: true, vote: null } : { word: wolves.has(id) ? wolfWord : villagerWord, vote: null };
+    }
 
-    const state: MrWhiteState = { seen: [], order, turn: 0, rounds: 0, candidates: players, runoff: false, voted: [] };
+    const state: MrWhiteState = {
+      settings: { wolves: counts.wolves, mrWhite: counts.mrWhite, spoken, mrWhiteChosen: mrWhiteOn },
+      seen: [],
+      order,
+      out: [],
+      round: 1,
+      turn: 0,
+      clues: [],
+      candidates: [],
+      runoff: false,
+      voted: [],
+    };
     return accept({ phase: "reveal", state, private: priv });
   },
 
@@ -173,52 +305,73 @@ export const mrWhite: GameModule = {
     const actor = action.actorId;
     const isHost = actor === ctx.room.hostId;
     const payload = action.payload ?? {};
+    const left = stillIn(s);
+    const actorIn = left.includes(actor);
 
     switch (action.type) {
       case "seen": {
         if (phase !== "reveal") return reject("wrong_phase");
         if (s.seen.includes(actor)) return noop();
         const seen = [...s.seen, actor];
-        if (seen.length === ids(ctx).length) return accept({ phase: "clues", state: { ...s, seen, turn: 0 } });
+        if (seen.length === s.order.length) return accept({ phase: "clues", state: { ...s, seen, turn: 0 } });
         return accept({ state: { ...s, seen } });
       }
 
       case "start_clues": {
-        // The host starts the clues without waiting for a phone that has gone
-        // to sleep; that player can still open their word later.
+        // The host starts without waiting for a phone that has gone to sleep;
+        // that player can still open their word later.
         if (phase !== "reveal") return reject("wrong_phase");
         if (!isHost) return reject("host_only");
         return accept({ phase: "clues", state: { ...s, turn: 0 } });
       }
 
-      case "clue_done": {
-        // The speaker taps when they have said their word; the host can move a
-        // stuck turn on (a phone gone to sleep, a child who needs a hand).
+      case "clue": {
+        // A typed clue from the player whose turn it is.
         if (phase !== "clues") return reject("wrong_phase");
-        // A tap meant for a turn that has already moved on (a double tap, or
-        // speaker and host tapping together) changes nothing.
+        if (s.settings.spoken) return reject("clues_are_spoken");
+        // A clue meant for a turn that has already moved on changes nothing.
         if (typeof payload.turn === "number" && payload.turn !== s.turn) return noop();
-        const speaker = s.order[s.turn];
-        if (actor !== speaker && !isHost) return reject("not_your_turn");
-        const turn = s.turn + 1;
-        if (turn < s.order.length) return accept({ state: { ...s, turn } });
-        return accept({ phase: "between", state: { ...s, turn: 0, rounds: s.rounds + 1 } });
+        if (actor !== left[s.turn]) return reject("not_your_turn");
+        const text = String(payload.text ?? "").trim().replace(/\s+/g, " ");
+        if (!text || !norm(text)) return reject("empty_clue");
+        if (text.length > MAX_CLUE) return reject("clue_too_long");
+        if (/\s/.test(text)) return reject("one_word_only");
+        const word = ctx.private[actor]?.word;
+        if (typeof word === "string" && tooClose(text, word)) return reject("clue_is_your_word");
+        if (s.clues.some((c) => c.text && sameWord(c.text, text))) return reject("clue_already_said");
+        return nextTurn(s, [...s.clues, { id: actor, round: s.round, text }]);
+      }
+
+      case "clue_done": {
+        // Spoken clues: the speaker taps when they have said it. The host can
+        // also move any stuck turn on, spoken or typed (a phone gone to sleep,
+        // a child who needs a hand).
+        if (phase !== "clues") return reject("wrong_phase");
+        if (typeof payload.turn === "number" && payload.turn !== s.turn) return noop();
+        const speaker = left[s.turn];
+        if (isHost && actor !== speaker) {
+          return nextTurn(s, s.settings.spoken ? s.clues : [...s.clues, { id: speaker, round: s.round, text: null }]);
+        }
+        if (actor !== speaker) return reject("not_your_turn");
+        if (!s.settings.spoken) return reject("type_your_clue");
+        return nextTurn(s, s.clues);
       }
 
       case "another_round": {
         if (phase !== "between") return reject("wrong_phase");
         if (!isHost) return reject("host_only");
-        return accept({ phase: "clues", state: { ...s, turn: 0 } });
+        return accept({ phase: "clues", state: { ...s, round: s.round + 1, turn: 0 } });
       }
 
       case "start_vote": {
         if (phase !== "between") return reject("wrong_phase");
         if (!isHost) return reject("host_only");
-        return accept({ phase: "vote", state: { ...s, candidates: ids(ctx), runoff: false, voted: [] } });
+        return accept({ phase: "vote", state: { ...s, candidates: left, runoff: false, voted: [] } });
       }
 
       case "vote": {
         if (phase !== "vote") return reject("wrong_phase");
+        if (!actorIn) return reject("you_are_out");
         const target = String(payload.memberId ?? "");
         if (target === actor) return reject("cannot_vote_for_self");
         if (!s.candidates.includes(target)) return reject("not_a_candidate");
@@ -226,9 +379,9 @@ export const mrWhite: GameModule = {
         const priv = { [actor]: { ...ctx.private[actor], vote: target } };
         // A tied player in a run-off still votes, for the other tied player.
         const next: MrWhiteState = { ...s, voted };
-        if (voted.length < ids(ctx).length) return accept({ state: next, private: priv });
+        if (voted.length < left.length) return accept({ state: next, private: priv });
         // The last vote both counts and must be saved: keep it in the write
-        // unless the count itself rewrote that player's private state (run-off).
+        // unless the count itself rewrote that player's private state.
         const counted = tally({ ...ctx, private: { ...ctx.private, ...priv } }, next);
         if (!counted.ok || counted.noop) return counted;
         return accept({ ...counted.write, private: { ...priv, ...(counted.write.private ?? {}) } });
@@ -244,12 +397,24 @@ export const mrWhite: GameModule = {
 
       case "guess": {
         if (phase !== "guess") return reject("wrong_phase");
-        const { mrWhite: mr, word } = secrets(ctx);
-        if (actor !== mr) return reject("not_mr_white");
+        const caught = s.out[s.out.length - 1];
+        if (!caught || caught.side !== "mr_white" || actor !== caught.id) return reject("not_mr_white");
+        if (caught.guess !== undefined) return noop();
         const guess = String(payload.word ?? "").trim().slice(0, MAX_GUESS);
         if (!guess) return reject("empty_guess");
-        if (sameWord(guess, word)) return finish(ctx, s, { winner: "mr_white", how: "guessed", guess });
-        return finish(ctx, s, { winner: "players", how: "caught", guess });
+        const { villagerWord } = secrets(ctx, s);
+        const next: MrWhiteState = { ...s, out: [...s.out.slice(0, -1), { ...caught, guess }] };
+        if (sameWord(guess, villagerWord)) return finish(ctx, next, { winner: "mr_white", how: "guessed", guess });
+        const won = winner(ctx, next);
+        if (won) return finish(ctx, next, won);
+        return nextRound(ctx, next, "out");
+      }
+
+      case "next_round": {
+        // After someone goes out the host starts the next round of clues.
+        if (phase !== "out") return reject("wrong_phase");
+        if (!isHost) return reject("host_only");
+        return accept({ phase: "clues", state: { ...s, turn: 0 } });
       }
 
       default:
@@ -268,9 +433,14 @@ export const mrWhite: GameModule = {
   results(state) {
     const s = state as MrWhiteState;
     if (!s.reveal) return [];
-    const players = s.order;
-    if (s.reveal.outcome.winner === "mr_white") return [{ memberId: s.reveal.mrWhite, rawPoints: 3 }];
-    return players.filter((id) => id !== s.reveal!.mrWhite).map((id) => ({ memberId: id, rawPoints: 1 }));
+    const { sides, outcome } = s.reveal;
+    const outIds = new Set(s.out.map((o) => o.id));
+    const ids = s.order;
+    if (outcome.winner === "villagers") return ids.filter((id) => sides[id] === "villager").map((id) => ({ memberId: id, rawPoints: 2 }));
+    if (outcome.winner === "mr_white") return ids.filter((id) => sides[id] === "mr_white").map((id) => ({ memberId: id, rawPoints: 6 }));
+    return ids
+      .filter((id) => sides[id] === "wolf" || (sides[id] === "mr_white" && !outIds.has(id)))
+      .map((id) => ({ memberId: id, rawPoints: sides[id] === "wolf" ? 4 : 6 }));
   },
 };
 

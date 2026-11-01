@@ -9,7 +9,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { avatarColour, initial, loadSession, memberClient } from "@/lib/client/session";
-import type { MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
+import { SIDE_NAME, hiddenLine, stillHiddenLine, stillIn, type MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
 
 interface RoomRow {
   code: string;
@@ -209,85 +209,145 @@ function TvFace({ colour, name }: { colour: string; name: string }) {
   );
 }
 
-/** Mr White on the TV: only what everyone may see. Words and votes appear only at the end. */
+/** Mr White on the TV: only what everyone may see. Words appear only at the end. */
 function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePublic; people: Person[] }) {
   const order = state.order ?? [];
+  const left = stillIn(state);
   const colour = (id?: string) => avatarColour(id ?? "");
   const name = (id?: string) => people.find((p) => p.id === id)?.name ?? "Someone";
-  const headline = "font-display text-[clamp(2.5rem,7vw,7rem)] font-bold leading-none";
-  const sub = "text-[clamp(1.2rem,2.6vw,2.6rem)] text-muted";
+  const headline = "font-display text-[clamp(2.2rem,5.5vw,5.5rem)] font-bold leading-none";
+  const sub = "text-[clamp(1.2rem,2.4vw,2.4rem)] text-muted";
   const face = (id?: string) => <TvFace colour={colour(id)} name={name(id)} />;
+  const spoken = !!state.settings?.spoken;
+  const outSide = new Map((state.out ?? []).map((o) => [o.id, o.side]));
+  const speaker = phase === "clues" ? left[state.turn ?? 0] : undefined;
+
+  // Everyone's clues so far, big enough to read from the sofa.
+  const board = !spoken && (
+    <ul className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(22rem,100%),1fr))] gap-[1.5vw]">
+      {order.map((id) => {
+        const side = outSide.get(id);
+        const theirs = (state.clues ?? []).filter((c) => c.id === id);
+        return (
+          <li key={id} className={`flex items-center gap-[1.2vw] rounded-[1.5rem] px-[1.2vw] py-[1vh] text-left ${id === speaker ? "bg-surface-2 ring-4 ring-go" : "bg-surface"} ${side ? "opacity-50" : ""}`}>
+            <span className="flex h-[clamp(3rem,5vw,5rem)] w-[clamp(3rem,5vw,5rem)] shrink-0 items-center justify-center rounded-full font-display text-[clamp(1.4rem,2.4vw,2.4rem)] font-bold text-ground" style={{ background: colour(id) }}>
+              {initial(name(id))}
+            </span>
+            <div className="flex min-w-0 flex-col">
+              <span className="text-[clamp(1rem,1.6vw,1.6rem)] font-bold text-muted">
+                {name(id)}
+                {side ? ` · out, ${SIDE_NAME[side]}` : ""}
+              </span>
+              <span className="flex flex-wrap gap-x-[1vw] font-display text-[clamp(1.6rem,3vw,3rem)] font-bold leading-tight">
+                {theirs.length === 0 && <span className="text-muted">{id === speaker ? "..." : ""}</span>}
+                {theirs.map((c, i) => (
+                  <span key={i} className={c.text ? "" : "text-muted"}>{c.text ?? "skipped"}</span>
+                ))}
+              </span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   let body: React.ReactNode = null;
   if (phase === "reveal") {
     body = (
       <>
         <h1 className={headline}>Check your secret word</h1>
-        <p className={sub}>Keep your phone hidden. {(state.seen ?? []).length} of {order.length} have looked.</p>
+        <p className={sub}>Keep your phone hidden. Hidden this game: {hiddenLine(state.settings)}.</p>
+        <p className={sub}>{(state.seen ?? []).length} of {order.length} have looked</p>
       </>
     );
   } else if (phase === "clues") {
-    const turn = state.turn ?? 0;
-    const speaker = order[turn];
     body = (
       <>
-        {face(speaker)}
         <h1 className={headline}>{name(speaker)}&apos;s turn</h1>
-        <p className={sub}>Say one word that fits the secret word</p>
-        <ol className="flex flex-wrap justify-center gap-3">
-          {order.map((id, i) => (
-            <li key={id} className={`rounded-full px-5 py-2 text-[clamp(1rem,1.8vw,1.8rem)] font-bold ${i === turn ? "bg-go text-ground" : i < turn ? "text-muted line-through" : "bg-surface"}`}>
-              {name(id)}
-            </li>
-          ))}
-        </ol>
+        <p className={sub}>{spoken ? "Say one word that fits your secret word" : "Type one word on your phone"}</p>
+        {spoken ? (
+          <>
+            {face(speaker)}
+            <ol className="flex flex-wrap justify-center gap-3">
+              {left.map((id, i) => (
+                <li key={id} className={`rounded-full px-5 py-2 text-[clamp(1rem,1.8vw,1.8rem)] font-bold ${i === state.turn ? "bg-go text-ground" : i < (state.turn ?? 0) ? "text-muted line-through" : "bg-surface"}`}>
+                  {name(id)}
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : (
+          board
+        )}
       </>
     );
   } else if (phase === "between") {
     body = (
       <>
-        <h1 className={headline}>Round {state.rounds ?? 1} done</h1>
+        <h1 className={headline}>Clues done</h1>
         <p className={sub}>Another round of clues, or time to vote?</p>
+        {board}
       </>
     );
   } else if (phase === "vote") {
     body = (
       <>
-        <h1 className={headline}>{state.runoff ? "A tie! Vote again" : "Who is Mr White?"}</h1>
-        <p className={sub}>Vote on your phone. {(state.voted ?? []).length} of {order.length} have voted.</p>
+        <h1 className={headline}>{state.runoff ? "A tie! Vote again" : "Who has a different word?"}</h1>
+        <p className={sub}>Vote on your phone. {(state.voted ?? []).length} of {left.length} have voted.</p>
+        {board}
       </>
     );
   } else if (phase === "guess") {
+    const caught = (state.out ?? [])[(state.out ?? []).length - 1];
     body = (
       <>
-        {face(state.picked)}
-        <h1 className={headline}>{name(state.picked)} is Mr White!</h1>
-        <p className={sub}>One guess at the secret word to steal the win...</p>
+        {face(caught?.id)}
+        <h1 className={headline}>{name(caught?.id)} is Mr White!</h1>
+        <p className={sub}>One guess at the word to win...</p>
+      </>
+    );
+  } else if (phase === "out") {
+    const gone = state.lastVote?.outId ? (state.out ?? []).find((o) => o.id === state.lastVote!.outId) : undefined;
+    body = gone ? (
+      <>
+        {face(gone.id)}
+        <h1 className={headline}>{name(gone.id)} is out</h1>
+        <p className="font-display text-[clamp(2rem,4.5vw,4.5rem)] font-bold text-go">They were {SIDE_NAME[gone.side]}</p>
+        {gone.guess !== undefined && <p className={sub}>Mr White guessed &ldquo;{gone.guess}&rdquo;. Wrong!</p>}
+        <p className={sub}>Still hidden: {stillHiddenLine(state)}</p>
+      </>
+    ) : (
+      <>
+        <h1 className={headline}>A tie again</h1>
+        <p className={sub}>Nobody is out this round. Still hidden: {stillHiddenLine(state)}</p>
       </>
     );
   } else if (phase === "results" && state.reveal) {
     const r = state.reveal;
-    const won = r.outcome.winner === "mr_white";
+    const title = r.outcome.winner === "villagers" ? "The Villagers win!" : r.outcome.winner === "mr_white" ? "Mr White wins!" : "The hidden players win!";
+    const hidden = order.filter((id) => r.sides[id] !== "villager");
     body = (
       <>
-        <h1 className={`${headline} text-go`}>{won ? "Mr White wins!" : "Mr White is caught!"}</h1>
-        <div className="flex items-center gap-[3vw]">
-          {face(r.mrWhite)}
-          <div className="flex flex-col text-left">
-            <span className={sub}>Mr White was</span>
-            <span className="font-display text-[clamp(2rem,5vw,5rem)] font-bold">{name(r.mrWhite)}</span>
-          </div>
-        </div>
-        <p className="text-[clamp(1.5rem,3.5vw,3.5rem)]">
-          The word was <span className="font-display font-bold text-go">{r.word}</span>
+        <h1 className={`${headline} text-go`}>{title}</h1>
+        <p className="text-[clamp(1.5rem,3.2vw,3.2rem)]">
+          Villagers had <span className="font-display font-bold text-go">{r.villagerWord}</span>, Wolves had <span className="font-display font-bold">{r.wolfWord}</span>
         </p>
-        {r.outcome.guess && <p className={sub}>Mr White guessed &ldquo;{r.outcome.guess}&rdquo;</p>}
+        <div className="flex flex-wrap justify-center gap-[3vw]">
+          {hidden.map((id) => (
+            <div key={id} className="flex flex-col items-center gap-2">
+              {face(id)}
+              <span className="text-[clamp(1.2rem,2.2vw,2.2rem)] font-bold">{name(id)}</span>
+              <span className={sub}>{SIDE_NAME[r.sides[id]]}</span>
+            </div>
+          ))}
+        </div>
+        {r.outcome.winner === "mr_white" && <p className={sub}>Mr White guessed &ldquo;{r.outcome.guess}&rdquo;</p>}
       </>
     );
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-[4vh] px-[5vw] py-[4vh] text-center">
+    <main className="flex flex-1 flex-col items-center justify-center gap-[3vh] px-[4vw] py-[3vh] text-center">
       <div className="font-display text-[clamp(1.5rem,3vw,3rem)] font-bold text-go">Mr White</div>
       {body}
     </main>

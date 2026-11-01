@@ -80,6 +80,9 @@ export function Lobby() {
   // ever this player's row: the database rules allow nothing else (0004).
   const [mine, setMine] = useState<Record<string, unknown>>({});
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // Mr White settings, for the host: Mr White on and typed clues by default.
+  const [mrWhiteOn, setMrWhiteOn] = useState(true);
+  const [spoken, setSpoken] = useState(false);
 
   // Every action asks the session store for a current token, so a game night
   // longer than the one-hour token keeps working.
@@ -425,11 +428,31 @@ export function Lobby() {
                 Everyone is in: lock the room
               </button>
             )}
+            <div className="flex flex-col gap-2 rounded-3xl bg-surface p-3" role="group" aria-label="Mr White settings">
+              <button
+                type="button"
+                aria-pressed={mrWhiteOn}
+                onClick={() => setMrWhiteOn((v) => !v)}
+                className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+              >
+                <span>Mr White, with no word{connectedCount < 5 ? " (from 5 players)" : ""}</span>
+                <span className={`rounded-full px-3 py-1 text-sm ${mrWhiteOn ? "bg-go text-ground" : "bg-surface-2 text-muted"}`}>{mrWhiteOn ? "On" : "Off"}</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={spoken}
+                onClick={() => setSpoken((v) => !v)}
+                className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+              >
+                <span>Clues</span>
+                <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{spoken ? "Said out loud" : "Typed on phones"}</span>
+              </button>
+            </div>
             <button
               type="button"
               disabled={connectedCount < 3}
               onClick={async () => {
-                const out = await act("start_game", { gameId: "mr-white" });
+                const out = await act("start_game", { gameId: "mr-white", options: { mrWhite: mrWhiteOn, spoken } });
                 if (out && out.ok === false) setActionError(message(out.reason));
               }}
               className="h-15 rounded-full border-2 border-go font-display text-xl font-bold text-go disabled:border-line disabled:text-muted disabled:opacity-60"
