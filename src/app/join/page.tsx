@@ -82,7 +82,12 @@ export default function Join() {
             <span key={i} className={`h-5 w-5 rounded-full ${i < pin.length ? "bg-go" : "border-[3px] border-line"}`} />
           ))}
         </div>
-        {error && <p role="alert" className="text-center font-bold text-alert">{error}</p>}
+        {/* Fixed space for the message, so the keypad never moves under a
+            child's finger when it appears or clears. Two lines fit the
+            longest PIN message. */}
+        <p role="alert" aria-live="polite" className="flex min-h-14 w-[300px] items-center justify-center text-center font-bold text-alert">
+          {error ?? ""}
+        </p>
         <div className="grid w-[300px] grid-cols-3 gap-3.5">
           {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
             <button key={d} type="button" onClick={() => press(d)} className="h-18 rounded-full bg-surface font-display text-3xl font-semibold">
