@@ -167,7 +167,7 @@ const MESSAGES: Record<string, string> = {
   empty_clue: "Type one word.",
   clue_too_long: "That word is too long. Try a shorter one.",
   one_word_only: "Just one word, no spaces.",
-  clue_not_allowed: "That word can't be a clue. Try another.",
+  clue_not_allowed: "That is your own word. Try another.",
   clue_already_said: "Someone has said that already. Try another word.",
   clues_are_spoken: "Clues are said out loud in this game.",
   type_your_clue: "Type your word, then tap Send.",

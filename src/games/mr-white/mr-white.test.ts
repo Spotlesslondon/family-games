@@ -210,22 +210,28 @@ describe("Mr White: typed clues", () => {
     expect(t.act(second, "clue_done", { turn: 1 })).toEqual({ ok: false, reason: "type_your_clue" });
   });
 
-  it("refuses either secret word from anyone, Mr White included, with the same message", () => {
+  it("refuses only a player's own word; the other side's word is allowed and shown", () => {
     for (let seed = 1; seed <= 15; seed++) {
       const t = new Table(seed, 5); // 3 Villagers, 1 Wolf, Mr White
       t.start();
       t.allSee();
       const villagerWord = t.villagerWord();
       const wolfWord = t.priv[t.of("wolf")[0]].word as string;
-      // Whoever's turn it is, Villager, Wolf or Mr White, neither word goes through.
+      const asClue = (w: string) => w.split(" ").pop()!.toUpperCase() + "S";
       for (let k = 0; k < 5; k++) {
         const id = t.stillIn()[t.s.turn];
-        for (const w of [villagerWord, wolfWord]) {
-          expect(t.act(id, "clue", { turn: t.s.turn, text: w.split(" ").pop()!.toUpperCase() + "S" })).toEqual({ ok: false, reason: "clue_not_allowed" });
+        const side = t.sides()[id];
+        const own = side === "villager" ? villagerWord : side === "wolf" ? wolfWord : null;
+        if (own) expect(t.act(id, "clue", { turn: t.s.turn, text: asClue(own) })).toEqual({ ok: false, reason: "clue_not_allowed" });
+        // The first to try the other side's word gets it through; after that it is a repeat.
+        const other = side === "villager" ? wolfWord : villagerWord;
+        const r = t.act(id, "clue", { turn: t.s.turn, text: asClue(other) });
+        if (!r.ok) {
+          expect(r).toEqual({ ok: false, reason: "clue_already_said" });
+          expect(t.act(id, "clue", { turn: t.s.turn, text: `ok${k}` }).ok).toBe(true);
         }
-        expect(t.act(id, "clue", { turn: t.s.turn, text: `ok${k}` }).ok).toBe(true);
       }
-      expect(JSON.stringify(t.s.clues)).not.toMatch(new RegExp(villagerWord.split(" ").pop()!, "i"));
+      expect(t.s.clues.some((c) => c.text === asClue(villagerWord) || c.text === asClue(wolfWord))).toBe(true);
     }
   });
 
