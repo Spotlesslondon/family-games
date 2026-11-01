@@ -115,10 +115,13 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- 3. A screen token sees only its own room's public rows.
 -- ---------------------------------------------------------------------------
+insert into screen_sessions (auth_user_id, room_id, family_id, approved_by) values
+  ('33333333-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-0000000000a1', 'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-00000000000a');
+
 do $$
 declare n int;
 begin
-  perform pg_temp.become('{"kind":"screen","family_id":"aaaaaaaa-0000-0000-0000-000000000001","room_id":"aaaaaaaa-0000-0000-0000-0000000000a1"}');
+  perform pg_temp.become('{"sub":"33333333-0000-0000-0000-000000000001","kind":"screen","family_id":"aaaaaaaa-0000-0000-0000-000000000001","room_id":"aaaaaaaa-0000-0000-0000-0000000000a1"}');
 
   select count(*) into n from rooms;
   if n <> 1 then raise exception 'screen sees % rooms, expected 1', n; end if;
@@ -131,8 +134,9 @@ begin
   select count(*) into n from room_private;
   if n <> 0 then raise exception 'screen can read private state'; end if;
 
+  -- Since 0014 the TV shows who is in the room: names of the people in it, nobody else.
   select count(*) into n from members;
-  if n <> 0 then raise exception 'screen can read members'; end if;
+  if n <> 2 then raise exception 'screen sees % members, expected the 2 in its room', n; end if;
 
   select count(*) into n from families;
   if n <> 0 then raise exception 'screen can read families'; end if;

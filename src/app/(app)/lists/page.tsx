@@ -78,7 +78,7 @@ export default function Lists() {
     loadSession()
       .then((s) => {
         if (cancelled) return;
-        if (!s || s.seat) {
+        if (!s || s.seat || s.screen) {
           router.replace("/join");
           return;
         }

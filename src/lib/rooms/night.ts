@@ -281,3 +281,47 @@ export async function setLocked(accessToken: string, roomId: unknown, locked: bo
   }
   throw new AuthError("busy_try_again", 409);
 }
+
+export interface ScreenSession extends Session {
+  screen: { roomId: string; familyId: string };
+}
+
+/** How long a TV session lasts at most. Closing the night ends it sooner (0014). */
+const SCREEN_HOURS = 12;
+
+/**
+ * Turns this device into the night's big screen: it shows the room and who is
+ * in it, and can never act or see anyone's secret. Decided 1 Nov 2026: the TV
+ * opens the same link as the phones, with no separate approval step, so it
+ * works only while the link does (before the host locks the room).
+ */
+export async function claimScreen(rawCode: unknown, body: Record<string, unknown>, existingRefresh: string | null): Promise<ScreenSession> {
+  const night = await liveNight(rawCode);
+  const anon = await anonymousSession(existingRefresh, body.phoneSession, night.id);
+  const db = serviceClient();
+
+  // A device sitting as a player cannot also be the TV.
+  const { count } = await db
+    .from("seats")
+    .select("id", { count: "exact", head: true })
+    .eq("auth_user_id", anon.userId)
+    .is("released_at", null);
+  if (count) throw new AuthError("already_seated", 409);
+
+  const { error } = await db.from("screen_sessions").upsert(
+    {
+      auth_user_id: anon.userId,
+      room_id: night.id,
+      family_id: night.family_id,
+      approved_by: night.host_member_id,
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + SCREEN_HOURS * 3_600_000).toISOString(),
+    },
+    { onConflict: "auth_user_id" }
+  );
+  if (error) throw new AuthError("screen_failed", 500, { reason: error.message });
+
+  // A fresh token now carries the screen claims, so the TV can read the room.
+  const watching = await refresh(anon.refreshToken);
+  return { ...watching, screen: { roomId: night.id, familyId: night.family_id } };
+}

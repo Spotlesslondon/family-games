@@ -149,6 +149,8 @@ const MESSAGES: Record<string, string> = {
   cannot_remove_self: "The host cannot remove themselves.",
   seat_ended: "You are no longer in this game night.",
   phone_session_needed: "Could not set up this phone. Try again.",
+  screens_only_watch: "The TV shows the game. Play on your phone.",
+  screen_failed: "Could not set up the TV. Try again.",
   invalid_list_name: "Give the list a name, up to 40 letters.",
   list_name_taken: "You already have a list with that name.",
   too_many_lists: "That is the most lists you can keep. Delete one first.",

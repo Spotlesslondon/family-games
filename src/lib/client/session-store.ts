@@ -23,6 +23,8 @@ export interface ClientSession {
   member: { id: string; name: string; role: string; familyId: string };
   /** Set when this phone joined by link: it may use this one room only. */
   seat?: { roomId: string };
+  /** Set when this device is a night's big screen: it watches that room only. */
+  screen?: { roomId: string };
 }
 
 export class SessionUnavailable extends Error {

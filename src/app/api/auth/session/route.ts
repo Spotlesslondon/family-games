@@ -24,8 +24,8 @@ export async function POST() {
     try {
       who = await caller(session.accessToken);
     } catch (err) {
-      // A phone that joined by link whose night is over, or that left or was
-      // removed: nothing left to renew, so the phone is signed out.
+      // A phone or TV that joined by link whose night is over, or that left or
+      // was removed: nothing left to renew, so it is signed out.
       if (err instanceof AuthError && err.code === "seat_ended") await clearRefreshCookie();
       throw err;
     }
@@ -34,6 +34,7 @@ export async function POST() {
       expiresAt: session.expiresAt,
       member: { id: who.id, name: who.display_name, role: who.role, familyId: who.family_id },
       ...(who.kind === "seat" ? { seat: { roomId: who.roomId } } : {}),
+      ...(who.kind === "screen" ? { screen: { roomId: who.roomId } } : {}),
     });
   } catch (err) {
     return errorResponse(err);

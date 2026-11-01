@@ -148,6 +148,10 @@ export function Lobby() {
           router.replace("/join");
           return;
         }
+        if (s.screen) {
+          router.replace(`/tv/${s.screen.roomId}`);
+          return;
+        }
         setOffline(false);
         dbRef.current = memberClient();
         seatRef.current = s.seat ? { memberId: s.member.id } : null;
@@ -301,7 +305,7 @@ export function Lobby() {
         <div className="flex flex-col gap-3 rounded-3xl bg-surface px-5 py-4">
           <span className="text-xs font-bold tracking-widest text-muted">INVITE CODE</span>
           <span className="font-display text-5xl font-bold tracking-[0.2em] text-go">{room.join_code}</span>
-          <span className="text-sm text-muted">Send the link to your group chat. Anyone with it can join until you lock the room.</span>
+          <span className="text-sm text-muted">Send the link to your group chat. Anyone with it can join until you lock the room. To show the night on a TV, open the same link on the TV and choose Show on the TV.</span>
           <div className="grid grid-cols-2 gap-3">
             <a
               href={`https://wa.me/?text=${encodeURIComponent(`Join our game night on Asher Games: ${inviteUrl(room.join_code)}`)}`}

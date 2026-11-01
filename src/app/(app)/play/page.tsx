@@ -18,7 +18,7 @@ export default function Welcome() {
     loadSession()
       .then((s) => {
         if (cancelled || !s) return;
-        router.replace(s.seat ? `/room/${s.seat.roomId}` : "/home");
+        router.replace(s.screen ? `/tv/${s.screen.roomId}` : s.seat ? `/room/${s.seat.roomId}` : "/home");
       })
       .catch(() => {
         // Offline or a blip: the buttons below still work.

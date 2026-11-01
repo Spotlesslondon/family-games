@@ -103,6 +103,10 @@ export function NightJoin() {
       return;
     }
     forgetSession();
+    if (out.screen) {
+      router.replace(`/tv/${out.screen.roomId}`);
+      return;
+    }
     rememberSeat(out.seat.roomId);
     router.replace(`/room/${out.seat.roomId}`);
   }
@@ -228,6 +232,17 @@ export function NightJoin() {
       >
         {night.people.length > 0 ? "I'm not on the list" : "Join with my name"}
       </button>
+      <div className="mt-auto flex flex-col gap-2 border-t-2 border-surface-2 pt-5">
+        <p className="text-muted">Is this the TV or a laptop by the TV?</p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => claim({ screen: true })}
+          className="h-13 rounded-full border-2 border-line font-bold disabled:opacity-60"
+        >
+          Show on the TV
+        </button>
+      </div>
     </main>
   );
 }

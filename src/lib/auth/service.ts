@@ -151,12 +151,13 @@ export async function callerMember(accessToken: string) {
 
 /** Who is calling: a signed-in member, or a phone sitting as someone in one open room. */
 export interface Caller {
-  kind: "member" | "seat";
+  /** member: signed in with a PIN. seat: a phone sitting as someone tonight. screen: a TV, watch only. */
+  kind: "member" | "seat" | "screen";
   id: string;
   family_id: string;
   role: string;
   display_name: string;
-  /** Only for a seat: the one room it may act in. */
+  /** For a seat or a screen: the one room it belongs to. */
   roomId: string | null;
 }
 
@@ -187,6 +188,20 @@ export async function caller(accessToken: string): Promise<Caller> {
     ]);
     if (room?.status === "open" && member) {
       return { kind: "seat", ...(member as Omit<Caller, "kind" | "roomId">), roomId: seat.room_id as string };
+    }
+  }
+  // A big screen (0005, 0014): watches one open night, never acts.
+  const { data: screen, error: screenError } = await db
+    .from("screen_sessions")
+    .select("room_id, family_id, expires_at")
+    .eq("auth_user_id", data.user.id)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (screenError) throw new AuthError("server_busy", 503, { reason: screenError.message });
+  if (screen) {
+    const { data: room } = await db.from("rooms").select("status").eq("id", screen.room_id).maybeSingle();
+    if (room?.status === "open") {
+      return { kind: "screen", id: "", family_id: screen.family_id as string, role: "screen", display_name: "TV", roomId: screen.room_id as string };
     }
   }
   throw new AuthError("seat_ended", 401);

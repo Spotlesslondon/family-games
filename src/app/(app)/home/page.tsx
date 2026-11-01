@@ -81,6 +81,10 @@ export default function Home() {
           router.replace(`/room/${s.seat.roomId}`);
           return;
         }
+        if (s.screen) {
+          router.replace(`/tv/${s.screen.roomId}`);
+          return;
+        }
         setOffline(false);
         setSession(s);
         readFamily();

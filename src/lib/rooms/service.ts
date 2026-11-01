@@ -80,6 +80,8 @@ export interface ActResult {
 /** Applies one action for the signed-in caller (a member, or a phone seated in this room). */
 export async function act(accessToken: string, roomId: string, type: string, payload?: Record<string, unknown>): Promise<ActResult> {
   const who = await caller(accessToken);
+  // The TV shows the room; it never takes a turn.
+  if (who.kind === "screen") throw new AuthError("screens_only_watch", 403);
   // A seat can act in its own room only.
   if (who.kind === "seat" && who.roomId !== roomId) throw new AuthError("room_not_found", 404);
   return actAs(who, roomId, type, payload);
