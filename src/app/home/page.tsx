@@ -18,6 +18,9 @@ export default function Home() {
   const [family, setFamily] = useState<{ name: string; code: string } | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [readError, setReadError] = useState<string | null>(null);
+  const [openRoom, setOpenRoom] = useState<{ id: string; code: string } | null>(null);
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomBusy, setRoomBusy] = useState(false);
 
   const [name, setName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -30,10 +33,12 @@ export default function Home() {
   // database rules: if the sign-in claims were wrong, these lists come back empty.
   const readFamily = useCallback(async (s: ClientSession) => {
     const db = memberClient(s.accessToken);
-    const [{ data: fam, error: famError }, { data: people, error: peopleError }] = await Promise.all([
+    const [{ data: fam, error: famError }, { data: people, error: peopleError }, { data: room }] = await Promise.all([
       db.from("families").select("name, code").maybeSingle(),
       db.from("members").select("id, display_name, role").order("created_at"),
+      db.from("rooms").select("id, code").eq("status", "open").maybeSingle(),
     ]);
+    setOpenRoom((room as { id: string; code: string } | null) ?? null);
     if (famError || peopleError || !fam) {
       setReadError("Could not load your family. Try signing in again.");
       return;
@@ -81,6 +86,24 @@ export default function Home() {
     readFamily(session);
   }
 
+  async function enterRoom(path: "/api/rooms" | "/api/rooms/join") {
+    if (!session) return;
+    setRoomError(null);
+    setRoomBusy(true);
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${session.accessToken}` },
+      body: JSON.stringify(openRoom ? { code: openRoom.code } : {}),
+    });
+    const body = await res.json().catch(() => ({}));
+    setRoomBusy(false);
+    if (!res.ok || !body.room) {
+      setRoomError(message(body.error));
+      return;
+    }
+    router.push(`/room/${body.room.id}`);
+  }
+
   async function signOut() {
     await fetch("/api/auth/signout", { method: "POST" });
     router.replace("/");
@@ -91,6 +114,7 @@ export default function Home() {
   }
 
   const isOwner = session.member.role === "owner";
+  const canHost = isOwner || session.member.role === "adult";
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-5 pb-8 pt-12">
@@ -111,6 +135,33 @@ export default function Home() {
           <span className="text-right text-muted">{family.name}</span>
         </div>
       )}
+
+      {openRoom ? (
+        <button
+          type="button"
+          disabled={roomBusy}
+          onClick={() => enterRoom("/api/rooms/join")}
+          className="flex items-center justify-between rounded-3xl bg-go px-5 py-4 text-left text-ground disabled:opacity-60"
+        >
+          <span className="flex flex-col">
+            <span className="font-display text-2xl font-bold">Game night is on</span>
+            <span className="font-bold">Room {openRoom.code}</span>
+          </span>
+          <span className="font-display text-xl font-bold">{roomBusy ? "Joining..." : "Join"}</span>
+        </button>
+      ) : canHost ? (
+        <button
+          type="button"
+          disabled={roomBusy}
+          onClick={() => enterRoom("/api/rooms")}
+          className="h-16 rounded-full bg-go font-display text-2xl font-bold text-ground disabled:opacity-60"
+        >
+          {roomBusy ? "Opening..." : "Start a game night"}
+        </button>
+      ) : (
+        <p className="rounded-3xl bg-surface px-5 py-4 text-muted">No game night yet. A grown-up can start one.</p>
+      )}
+      {roomError && <p role="alert" className="font-bold text-alert">{roomError}</p>}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-bold tracking-widest text-muted">IN THE FAMILY · {rows.length}</h2>

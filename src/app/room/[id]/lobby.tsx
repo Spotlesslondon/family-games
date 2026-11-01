@@ -1,0 +1,203 @@
+"use client";
+
+import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { avatarColour, initial, loadSession, memberClient, type ClientSession } from "@/lib/client/session";
+
+interface RoomRow {
+  id: string;
+  code: string;
+  host_member_id: string;
+  status: "open" | "closed";
+  phase: string;
+}
+
+interface Seat {
+  id: string;
+  name: string;
+  connected: boolean;
+  colour: string;
+}
+
+export function Lobby() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const [session, setSession] = useState<ClientSession | null>(null);
+  const [room, setRoom] = useState<RoomRow | null>(null);
+  const [seats, setSeats] = useState<Seat[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const dbRef = useRef<SupabaseClient | null>(null);
+
+  const act = useCallback(
+    async (type: string, keepalive = false) => {
+      if (!session) return null;
+      const res = await fetch("/api/room-action", {
+        method: "POST",
+        keepalive,
+        headers: { "content-type": "application/json", authorization: `Bearer ${session.accessToken}` },
+        body: JSON.stringify({ roomId: id, type }),
+      });
+      return res.json().catch(() => null);
+    },
+    [id, session]
+  );
+
+  // Read the room through the database rules, as this member.
+  const reload = useCallback(async () => {
+    const db = dbRef.current;
+    if (!db) return;
+    const [{ data: r }, { data: inRoom }, { data: people }] = await Promise.all([
+      db.from("rooms").select("id, code, host_member_id, status, phase").eq("id", id).maybeSingle(),
+      db.from("room_members").select("member_id, connected, joined_at").eq("room_id", id).order("joined_at"),
+      db.from("members").select("id, display_name").order("created_at"),
+    ]);
+    if (!r) {
+      setError("This room was not found.");
+      return;
+    }
+    const order = (people ?? []).map((p) => p.id as string);
+    const names = new Map((people ?? []).map((p) => [p.id as string, p.display_name as string]));
+    setRoom(r as RoomRow);
+    setSeats(
+      (inRoom ?? []).map((m) => ({
+        id: m.member_id as string,
+        name: names.get(m.member_id as string) ?? "Someone",
+        connected: m.connected as boolean,
+        colour: avatarColour(Math.max(0, order.indexOf(m.member_id as string))),
+      }))
+    );
+  }, [id]);
+
+  useEffect(() => {
+    loadSession().then((s) => {
+      if (!s) {
+        router.replace("/join");
+        return;
+      }
+      dbRef.current = memberClient(s.accessToken);
+      setSession(s);
+    });
+  }, [router]);
+
+  // Join on arrival, subscribe to changes, and say when this phone goes away.
+  useEffect(() => {
+    const db = dbRef.current;
+    if (!session || !db) return;
+    let alive = true;
+    act("join").then(() => {
+      if (alive) reload();
+    });
+
+    const channel = db
+      .channel(`room-${id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${id}` }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${id}` }, () => reload())
+      .subscribe();
+
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        fetch("/api/room-action", {
+          method: "POST",
+          keepalive: true,
+          headers: { "content-type": "application/json", authorization: `Bearer ${session.accessToken}` },
+          body: JSON.stringify({ roomId: id, type: "presence", payload: { connected: false } }),
+        });
+      } else {
+        act("join").then(() => reload());
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      db.removeChannel(channel);
+    };
+  }, [session, id, act, reload]);
+
+  async function leave() {
+    await act("leave");
+    router.replace("/home");
+  }
+
+  async function closeRoom() {
+    await act("close_room");
+    router.replace("/home");
+  }
+
+  if (error) {
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-16">
+        <p className="text-lg">{error}</p>
+        <button type="button" onClick={() => router.replace("/home")} className="h-14 rounded-full bg-go font-display text-xl font-bold text-ground">Back home</button>
+      </main>
+    );
+  }
+
+  if (!session || !room) {
+    return <main className="flex flex-1 items-center justify-center text-muted">Loading...</main>;
+  }
+
+  if (room.status === "closed") {
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-16">
+        <h1 className="font-display text-3xl font-semibold">Game night is over</h1>
+        <p className="text-muted">The host has closed this room.</p>
+        <button type="button" onClick={() => router.replace("/home")} className="h-14 rounded-full bg-go font-display text-xl font-bold text-ground">Back home</button>
+      </main>
+    );
+  }
+
+  const isHost = room.host_member_id === session.member.id;
+  const here = seats.filter((s) => s.connected).length;
+
+  return (
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-12">
+      <div className="flex items-center justify-between">
+        <h1 className="font-display text-3xl font-semibold">Game night</h1>
+        {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ground">You are host</span>}
+      </div>
+
+      <div className="flex flex-col gap-1 rounded-3xl bg-surface px-5 py-4">
+        <span className="text-xs font-bold tracking-widest text-muted">ROOM CODE</span>
+        <span className="font-display text-5xl font-bold tracking-[0.3em] text-go">{room.code}</span>
+      </div>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-xs font-bold tracking-widest text-muted">IN THE ROOM · {here}</h2>
+        <ul className="grid grid-cols-3 gap-3">
+          {seats.map((s) => (
+            <li key={s.id} className="flex flex-col items-center gap-2">
+              <span
+                className={`flex h-16 w-16 items-center justify-center rounded-full font-display text-2xl font-bold ${s.connected ? "text-ground" : "border-2 border-dashed bg-surface-2"}`}
+                style={s.connected ? { background: s.colour } : { borderColor: s.colour, color: s.colour }}
+              >
+                {initial(s.name)}
+              </span>
+              <span className={`text-center text-sm font-bold ${s.connected ? "" : "text-muted"}`}>
+                {s.id === session.member.id ? "You" : s.name}
+                {s.id === room.host_member_id ? " · host" : ""}
+                {!s.connected && <span className="block font-semibold">away</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <div className="mt-auto flex flex-col gap-3">
+        {isHost ? (
+          <>
+            <button type="button" disabled className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground opacity-60">Games arrive next: Mr White</button>
+            <button type="button" onClick={closeRoom} className="h-13 rounded-full border-2 border-line font-bold">End game night</button>
+          </>
+        ) : (
+          <>
+            <p className="text-center text-muted">Waiting for the host to pick a game</p>
+            <button type="button" onClick={leave} className="h-13 rounded-full border-2 border-line font-bold">Leave the room</button>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}

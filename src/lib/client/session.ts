@@ -48,6 +48,10 @@ const MESSAGES: Record<string, string> = {
   name_taken: "Someone in the family already has that name.",
   owner_only: "Only the family owner can add people.",
   not_signed_in: "Please sign in again.",
+  grown_ups_host: "Only a grown-up can start a game night.",
+  room_not_found: "That game night has ended.",
+  game_in_progress: "A game is already running. Wait for the next one.",
+  busy_try_again: "Lots happening at once. Try again.",
 };
 
 export function message(code: string | undefined, extra?: { attemptsLeft?: number }): string {
