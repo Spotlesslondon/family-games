@@ -21,8 +21,9 @@ export function hashPin(pin: string): string {
   return `scrypt$${SCRYPT_N}$${salt.toString("base64")}$${hash.toString("base64")}`;
 }
 
-export function verifyPin(pin: string, stored: string): boolean {
-  if (!isValidPin(pin)) return false;
+export function verifyPin(pin: string, stored: string | null | undefined): boolean {
+  // People who only ever join by link have no PIN and can never sign in.
+  if (!stored || !isValidPin(pin)) return false;
   const parts = stored.split("$");
   if (parts.length !== 4 || parts[0] !== "scrypt") return false;
   const n = Number(parts[1]);

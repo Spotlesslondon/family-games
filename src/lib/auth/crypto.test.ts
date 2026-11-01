@@ -36,6 +36,12 @@ describe("PINs", () => {
     expect(hashPin("1111")).not.toBe(hashPin("1111"));
   });
 
+  it("never signs in someone with no PIN, whatever they type", () => {
+    expect(verifyPin("1111", null)).toBe(false);
+    expect(verifyPin("0000", undefined)).toBe(false);
+    expect(verifyPin("1234", "")).toBe(false);
+  });
+
   it("rejects malformed stored values instead of throwing", () => {
     expect(verifyPin("1111", "x")).toBe(false);
     expect(verifyPin("1111", "scrypt$abc$def$ghi")).toBe(false);

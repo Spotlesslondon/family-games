@@ -188,6 +188,7 @@ export async function listMembers(rawCode: unknown) {
     .from("members")
     .select("id, display_name, avatar")
     .eq("family_id", family.id)
+    .not("pin_hash", "is", null) // only people who sign in; players join by link
     .order("created_at");
   return {
     family: { name: family.name as string, code },
