@@ -9,7 +9,7 @@
 // white, yellow or green; blue, pink and red are for art panels only.
 
 import type { Metadata, Viewport } from "next";
-import { atkinsonNext as reading, bagelFatOne as display } from "@/fonts";
+import { atkinsonNext as reading, bagelFatOne as display } from "@/fonts/paper";
 import { Blank, Fibber, HouseTrio, KnowItAll, Slammer, Sneak, Sweaty } from "@/components/cast";
 
 

@@ -16,7 +16,7 @@ import {
   wasSeatIn,
   type ClientSession,
 } from "@/lib/client/session";
-import { Reconnect } from "@/app/reconnect";
+import { Reconnect } from "@/app/(app)/reconnect";
 
 interface RoomRow {
   id: string;

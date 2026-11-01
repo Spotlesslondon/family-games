@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { initial, loadSession, memberClient, message, postAsMember, type ClientSession } from "@/lib/client/session";
-import { Reconnect } from "@/app/reconnect";
+import { Reconnect } from "@/app/(app)/reconnect";
 
 interface Person {
   id: string;

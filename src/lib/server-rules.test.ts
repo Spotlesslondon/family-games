@@ -29,8 +29,12 @@ describe("visitor address for rate limits", () => {
 
 describe("idle game nights", () => {
   const now = Date.parse("2026-11-01T20:00:00Z");
-  it("closes a night with no activity for over 30 minutes", () => {
+  it("closes a night with no activity for over 90 minutes", () => {
+    expect(IDLE_CLOSE_MS).toBe(90 * 60_000);
     expect(isIdle(new Date(now - IDLE_CLOSE_MS - 1000).toISOString(), now)).toBe(true);
+  });
+  it("keeps a night through a long dinner break", () => {
+    expect(isIdle(new Date(now - 60 * 60_000).toISOString(), now)).toBe(false);
   });
   it("keeps a night that is still going", () => {
     expect(isIdle(new Date(now - 5 * 60_000).toISOString(), now)).toBe(false);

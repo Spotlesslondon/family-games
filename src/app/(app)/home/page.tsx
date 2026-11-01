@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { avatarColour, forgetSession, initial, loadSession, memberClient, message, postAsMember, type ClientSession } from "@/lib/client/session";
-import { Reconnect } from "@/app/reconnect";
+import { Reconnect } from "@/app/(app)/reconnect";
 
 interface Row {
   id: string;
@@ -35,9 +35,11 @@ export default function Home() {
   const [name, setName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [pin, setPin] = useState("");
-  const [grownUp, setGrownUp] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The PIN form is only for a grown-up who signs in, so it stays folded away:
+  // players are added on the lists screen with just a name and an age.
+  const [showGrownUpForm, setShowGrownUpForm] = useState(false);
 
   // Everything below is read with the member's own token, through the
   // database rules: if the sign-in claims were wrong, these lists come back empty.
@@ -97,7 +99,7 @@ export default function Home() {
     if (!session) return;
     setFormError(null);
     setBusy(true);
-    const res = await postAsMember("/api/family/members", { name, dateOfBirth, pin, role: grownUp ? "adult" : "member" }).catch(() => null);
+    const res = await postAsMember("/api/family/members", { name, dateOfBirth, pin, role: "adult" }).catch(() => null);
     if (!res) {
       setBusy(false);
       setFormError(message("offline"));
@@ -112,7 +114,6 @@ export default function Home() {
     setName("");
     setDateOfBirth("");
     setPin("");
-    setGrownUp(false);
     readFamily();
   }
 
@@ -243,9 +244,18 @@ export default function Home() {
         </ul>
       </section>
 
-      {isOwner && (
+      {isOwner && !showGrownUpForm && (
+        <button type="button" onClick={() => setShowGrownUpForm(true)} className="text-center font-bold text-muted underline underline-offset-4">
+          Add a grown-up who signs in
+        </button>
+      )}
+      {isOwner && showGrownUpForm && (
         <form onSubmit={addPerson} className="flex flex-col gap-3 rounded-3xl bg-surface p-5">
-          <h2 className="font-display text-2xl font-semibold">Add someone</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-2xl font-semibold">Add a grown-up who signs in</h2>
+            <button type="button" onClick={() => setShowGrownUpForm(false)} className="h-10 shrink-0 rounded-full border-2 border-line px-4 text-sm font-bold">Close</button>
+          </div>
+          <p className="text-muted">For another adult who hosts game nights. Players join by your link, so add them on your lists instead.</p>
           <label className="flex flex-col gap-1.5">
             <span className="font-bold">Name</span>
             <input className={field} value={name} onChange={(e) => setName(e.target.value)} required />
@@ -257,10 +267,6 @@ export default function Home() {
           <label className="flex flex-col gap-1.5">
             <span className="font-bold">Their PIN</span>
             <input className={field} type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} placeholder="4 numbers" required />
-          </label>
-          <label className="flex min-h-11 items-center gap-3">
-            <input type="checkbox" className="h-6 w-6 accent-[#FFC93C]" checked={grownUp} onChange={(e) => setGrownUp(e.target.checked)} />
-            <span className="font-bold">This person is a grown-up</span>
           </label>
           {formError && <p role="alert" className="font-bold text-alert">{formError}</p>}
           <button type="submit" disabled={busy} className="h-14 rounded-full bg-go font-display text-xl font-bold text-ground disabled:opacity-60">

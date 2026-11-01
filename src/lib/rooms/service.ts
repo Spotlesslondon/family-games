@@ -134,8 +134,12 @@ export async function actAs(
   throw new AuthError("busy_try_again", 409);
 }
 
-/** A night with no activity for this long is closed rather than reused. */
-export const IDLE_CLOSE_MS = 30 * 60_000;
+/**
+ * A night with no activity for this long is closed rather than reused.
+ * 90 minutes, set by the CEO seat on 1 Nov 2026 so a long dinner break does
+ * not end the night; to be confirmed at the family table test.
+ */
+export const IDLE_CLOSE_MS = 90 * 60_000;
 
 export function isIdle(lastActivityAt: string | null | undefined, now = Date.now()): boolean {
   return !!lastActivityAt && now - Date.parse(lastActivityAt) > IDLE_CLOSE_MS;

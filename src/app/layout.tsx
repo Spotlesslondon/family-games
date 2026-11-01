@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { fredoka as display, nunito as body } from "@/fonts";
 import "./globals.css";
 import { RegisterServiceWorker } from "./register-sw";
 
@@ -23,8 +22,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`h-full antialiased ${display.variable} ${body.variable}`}>
-      <body className="min-h-full flex flex-col font-sans bg-ground text-ink">
+    <html lang="en" className="h-full antialiased">
+      <body className="min-h-full flex flex-col">
         {children}
         <RegisterServiceWorker />
       </body>
