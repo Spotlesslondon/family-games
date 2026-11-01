@@ -43,4 +43,9 @@ for f in "$ROOT"/supabase/tests/0[1-9]*.sql; do
   "${PSQL[@]}" -d family_games_test -f "$f"
 done
 
+echo "fingerprint (compare with the live database):"
+"${PSQL[@]}" -d family_games_test -A -F ' ' -t -f "$ROOT/supabase/fingerprint.sql"
+
+if [ -n "${DETAIL_SQL:-}" ]; then "${PSQL[@]}" -d family_games_test -A -t -f "$DETAIL_SQL"; fi
+
 echo "db:test passed"
