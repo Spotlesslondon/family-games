@@ -73,6 +73,10 @@ export const LIMITS = {
   pinSignIn: [60, 600], // a table of phones signing in, with typos, is well under this
   familyLookup: [60, 600],
   familyCreate: [10, 3600],
+  // A whole table opening the link at once, with reloads. Guessing one live
+  // code among a million at this rate would take years from one address.
+  joinLookup: [60, 600],
+  joinClaim: [30, 600],
 } as const satisfies Record<string, readonly [number, number]>;
 
 /** Counts one request against a limit; throws 429 once it is used up. */

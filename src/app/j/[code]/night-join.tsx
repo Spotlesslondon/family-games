@@ -1,0 +1,233 @@
+"use client";
+
+// The page a WhatsApp invite opens: ashergames.com/j/583920.
+// No account, no PIN: tap your name (or add yourself) and you are in.
+
+import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { avatarColour, forgetSession, initial, loadSession, message, newPhoneSession, postAsMember, rememberSeat } from "@/lib/client/session";
+
+interface Person {
+  id: string;
+  name: string;
+  taken: boolean;
+}
+
+const BANDS: { value: string; label: string }[] = [
+  { value: "6-8", label: "6 to 8" },
+  { value: "9-11", label: "9 to 11" },
+  { value: "12-15", label: "12 to 15" },
+  { value: "16+", label: "16 or over" },
+];
+
+export function NightJoin() {
+  const { code } = useParams<{ code: string }>();
+  const router = useRouter();
+  const [night, setNight] = useState<{ host: string; people: Person[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [gone, setGone] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [guest, setGuest] = useState(false);
+  const [name, setName] = useState("");
+  const [band, setBand] = useState<string | null>(null);
+
+  const look = useCallback(async () => {
+    const res = await fetch(`/api/j/${encodeURIComponent(code)}`, { cache: "no-store" }).catch(() => null);
+    if (!res) {
+      setError(message("offline"));
+      return;
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setGone(message(body.error));
+      return;
+    }
+    setError(null);
+    setNight(body);
+  }, [code]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // A family member already signed in on this phone joins as themselves.
+      const session = await loadSession().catch(() => null);
+      if (cancelled) return;
+      if (session && !session.seat) {
+        const res = await postAsMember("/api/rooms/join", { code }).catch(() => null);
+        const body = res ? await res.json().catch(() => ({})) : {};
+        if (cancelled) return;
+        if (res?.ok && body.room?.id) {
+          router.replace(`/room/${body.room.id}`);
+          return;
+        }
+        // Not this family's night: carry on and join by name like anyone else.
+      }
+      look();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, look, router]);
+
+  async function claim(body: Record<string, unknown>) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const send = (extra: Record<string, unknown>) =>
+      fetch(`/api/j/${encodeURIComponent(code)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, ...extra }),
+      }).catch(() => null);
+    // A phone already holding a link session reuses it; otherwise it makes one.
+    let res = await send({});
+    let out = res ? await res.json().catch(() => ({})) : { error: "offline" };
+    if (res?.status === 401 && out.error === "phone_session_needed") {
+      const phoneSession = await newPhoneSession();
+      if (!phoneSession) {
+        out = { error: "offline" };
+        res = null;
+      } else {
+        res = await send({ phoneSession });
+        out = res ? await res.json().catch(() => ({})) : { error: "offline" };
+      }
+    }
+    if (!res?.ok) {
+      setBusy(false);
+      if (out.error === "night_not_found") {
+        setGone(message(out.error));
+        return;
+      }
+      setError(message(out.error));
+      look(); // someone may have just taken that name
+      return;
+    }
+    forgetSession();
+    rememberSeat(out.seat.roomId);
+    router.replace(`/room/${out.seat.roomId}`);
+  }
+
+  if (gone) {
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-16">
+        <div className="font-display text-xl font-bold text-go">Asher Games</div>
+        <h1 className="font-display text-3xl font-semibold">This link has closed</h1>
+        <p className="text-lg text-muted">{gone}</p>
+      </main>
+    );
+  }
+
+  if (!night) {
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-4 px-6 text-muted">
+        {error ? (
+          <>
+            <p role="alert" className="text-center font-bold text-alert">{error}</p>
+            <button type="button" onClick={look} className="h-14 w-full rounded-full bg-go font-display text-xl font-bold text-ground">Try again</button>
+          </>
+        ) : (
+          "Loading..."
+        )}
+      </main>
+    );
+  }
+
+  if (guest) {
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-8 pt-10">
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={() => {
+            setGuest(false);
+            setError(null);
+          }}
+          className="flex h-12 w-12 items-center justify-center self-start rounded-full bg-surface"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
+        <h1 className="font-display text-3xl font-semibold">Join as a guest</h1>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            claim({ guestName: name, ageBand: band });
+          }}
+          className="flex flex-col gap-6"
+        >
+          <label className="flex flex-col gap-2">
+            <span className="font-bold">Your first name</span>
+            <input
+              className="h-16 rounded-2xl border-2 border-surface-2 bg-surface px-4 font-display text-2xl font-bold outline-none focus:border-go"
+              value={name}
+              onChange={(e) => setName(e.target.value.slice(0, 40))}
+              autoComplete="given-name"
+              autoCapitalize="words"
+              required
+            />
+          </label>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 font-bold">How old are you?</legend>
+            <p className="-mt-1 mb-1 text-sm text-muted">So the quiz questions are fair for everyone.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {BANDS.map((b) => (
+                <button
+                  key={b.value}
+                  type="button"
+                  aria-pressed={band === b.value}
+                  onClick={() => setBand(b.value)}
+                  className={`h-14 rounded-2xl border-2 font-bold ${band === b.value ? "border-go bg-go text-ground" : "border-surface-2 bg-surface"}`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <p role="alert" aria-live="polite" className="min-h-6 text-center font-bold text-alert">{error ?? ""}</p>
+          <button type="submit" disabled={busy || !name.trim() || !band} className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground disabled:opacity-60">
+            {busy ? "Joining..." : "Join game night"}
+          </button>
+        </form>
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-8 pt-12">
+      <div className="flex flex-col gap-1.5">
+        <div className="font-display text-xl font-bold text-go">Asher Games</div>
+        <div className="text-muted">{night.host}&apos;s game night</div>
+      </div>
+      <h1 className="font-display text-4xl font-semibold leading-tight">Who are you?</h1>
+      <p role="alert" aria-live="polite" className="-my-2 min-h-6 font-bold text-alert">{error ?? ""}</p>
+      {night.people.length > 0 && (
+        <div className="grid grid-cols-2 gap-4">
+          {night.people.map((p, i) => (
+            <button
+              key={p.id}
+              type="button"
+              disabled={p.taken || busy}
+              onClick={() => claim({ memberId: p.id })}
+              className="flex flex-col items-center gap-3 rounded-3xl border-2 border-surface-2 bg-surface px-3 py-5 disabled:opacity-50"
+            >
+              <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ground" style={{ background: avatarColour(i) }}>
+                {initial(p.name)}
+              </span>
+              <span className="text-lg font-bold">{p.name}</span>
+              {p.taken && <span className="-mt-2 text-sm font-semibold text-muted">already in</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          setGuest(true);
+          setError(null);
+        }}
+        className="h-15 rounded-full border-2 border-line font-display text-xl font-bold"
+      >
+        {night.people.length > 0 ? "I'm not on the list" : "Join with my name"}
+      </button>
+    </main>
+  );
+}

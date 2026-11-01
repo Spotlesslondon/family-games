@@ -184,6 +184,32 @@ describe("joining and leaving", () => {
   });
 });
 
+describe("removing a player", () => {
+  it("lets the host remove someone from the lobby", () => {
+    const t = new Table();
+    t.ok("join", "dad");
+    t.ok("join", "kid");
+    t.ok("remove_player", "mum", { memberId: "kid" });
+    expect(t.room.members.map((m) => m.id)).toEqual(["mum", "dad"]);
+    expect(t.events()).toEqual(["member_removed"]);
+  });
+
+  it("is host only, never the host themselves, and only people in the room", () => {
+    const t = new Table();
+    t.ok("join", "dad");
+    expect(t.rejected("remove_player", "dad", { memberId: "mum" })).toBe("host_only");
+    expect(t.rejected("remove_player", "mum", { memberId: "mum" })).toBe("cannot_remove_self");
+    expect(t.rejected("remove_player", "mum", { memberId: "nan" })).toBe("target_not_in_room");
+  });
+
+  it("is refused mid-game, so no game is left half-played", () => {
+    const t = new Table();
+    t.ok("join", "dad");
+    t.ok("start_game", "mum", { gameId: "tap" });
+    expect(t.rejected("remove_player", "mum", { memberId: "dad" })).toBe("game_in_progress");
+  });
+});
+
 describe("starting a game", () => {
   it("is host only, needs a known game and enough connected players", () => {
     const t = new Table();

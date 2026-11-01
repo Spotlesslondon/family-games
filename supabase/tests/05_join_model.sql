@@ -162,7 +162,7 @@ end $$;
 
 -- 7. What a seated phone can read: Kid in Gran's room.
 select set_config('request.jwt.claims',
-  '{"role":"authenticated","kind":"seat","family_id":"a0000000-0000-0000-0000-000000000001","room_id":"a2000000-0000-0000-0000-000000000001","member_id":"a0000000-0000-0000-0000-00000000000b"}', true);
+  '{"role":"authenticated","sub":"5e000000-0000-0000-0000-00000000000b","kind":"seat","family_id":"a0000000-0000-0000-0000-000000000001","room_id":"a2000000-0000-0000-0000-000000000001","member_id":"a0000000-0000-0000-0000-00000000000b"}', true);
 set local role authenticated;
 
 do $$

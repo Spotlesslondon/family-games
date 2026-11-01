@@ -4,7 +4,7 @@
 import { randomInt } from "node:crypto";
 import { serviceClient } from "@/lib/supabase/server";
 import { ageBand } from "@/lib/auth/crypto";
-import { AuthError, callerMember } from "@/lib/auth/service";
+import { AuthError, caller, callerMember, type Caller } from "@/lib/auth/service";
 import { applyWrite } from "@/engine/apply";
 import { LOBBY, applyRoomAction } from "@/engine/room";
 import { cryptoRng } from "@/engine/rng";
@@ -77,9 +77,21 @@ export interface ActResult {
   version?: number;
 }
 
-/** Applies one action for the signed-in caller. Retries a lost race up to three times. */
+/** Applies one action for the signed-in caller (a member, or a phone seated in this room). */
 export async function act(accessToken: string, roomId: string, type: string, payload?: Record<string, unknown>): Promise<ActResult> {
-  const caller = await callerMember(accessToken);
+  const who = await caller(accessToken);
+  // A seat can act in its own room only.
+  if (who.kind === "seat" && who.roomId !== roomId) throw new AuthError("room_not_found", 404);
+  return actAs(who, roomId, type, payload);
+}
+
+/** Applies one action for a caller already identified. Retries a lost race up to three times. */
+export async function actAs(
+  caller: Pick<Caller, "id" | "family_id">,
+  roomId: string,
+  type: string,
+  payload?: Record<string, unknown>
+): Promise<ActResult> {
   const db = serviceClient();
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -129,7 +141,7 @@ export function isIdle(lastActivityAt: string | null | undefined, now = Date.now
   return !!lastActivityAt && now - Date.parse(lastActivityAt) > IDLE_CLOSE_MS;
 }
 
-async function closeIdle(roomId: string): Promise<void> {
+export async function closeIdle(roomId: string): Promise<void> {
   await serviceClient()
     .from("rooms")
     .update({ status: "closed", closed_at: new Date().toISOString() })
@@ -140,18 +152,39 @@ async function closeIdle(roomId: string): Promise<void> {
 async function findOpenRoom(familyId: string) {
   const { data, error } = await serviceClient()
     .from("rooms")
-    .select("id, code, last_activity_at")
+    .select("id, code, join_code, last_activity_at")
     .eq("family_id", familyId)
     .eq("status", "open")
     .maybeSingle();
   if (error) throw new AuthError("server_busy", 503, { reason: error.message });
-  return data as { id: string; code: string; last_activity_at: string } | null;
+  return data as { id: string; code: string; join_code: string | null; last_activity_at: string } | null;
+}
+
+/** A list id from the phone, accepted only if the list is this family's. */
+async function ownList(familyId: string, raw: unknown): Promise<string | null> {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string" || !/^[0-9a-f-]{36}$/i.test(raw)) throw new AuthError("invalid_list", 400);
+  const { data } = await serviceClient().from("lists").select("id").eq("id", raw).eq("family_id", familyId).maybeSingle();
+  if (!data) throw new AuthError("list_not_found", 404);
+  return raw;
+}
+
+/** The 6-digit code in the night's link. Unique among nights still taking players (0008). */
+export function joinCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
+}
+
+export interface OpenedRoom {
+  id: string;
+  code: string;
+  join_code: string | null;
 }
 
 /** Opens a room, or rejoins the family's room that is already open. Owners and grown-ups only. */
-export async function openRoom(accessToken: string): Promise<{ id: string; code: string }> {
+export async function openRoom(accessToken: string, rawListId?: unknown): Promise<OpenedRoom> {
   const caller = await callerMember(accessToken);
   if (caller.role !== "owner" && caller.role !== "adult") throw new AuthError("grown_ups_host", 403);
+  const listId = await ownList(caller.family_id, rawListId);
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const existing = await findOpenRoom(caller.family_id);
@@ -160,8 +193,8 @@ export async function openRoom(accessToken: string): Promise<{ id: string; code:
       continue;
     }
     if (existing) {
-      await act(accessToken, existing.id, "join");
-      return { id: existing.id, code: existing.code };
+      await actAs(caller, existing.id, "join");
+      return { id: existing.id, code: existing.code, join_code: existing.join_code };
     }
 
     // Room, host seat and opening event in one step (0009). The database
@@ -173,11 +206,13 @@ export async function openRoom(accessToken: string): Promise<{ id: string; code:
       p_host: caller.id,
       p_code: code,
       p_phase: LOBBY,
+      p_join_code: joinCode(),
+      p_list_id: listId,
     });
-    if (!error) return data as { id: string; code: string };
+    if (!error) return data as OpenedRoom;
     if (error.code !== "23505") throw new AuthError("room_create_failed", 500, { reason: error.message });
-    // 23505: either another tap opened the family's room, or the 4-letter code
-    // is in use by another family. Either way, look again.
+    // 23505: another tap opened the family's room, or the 4-letter code or the
+    // 6-digit link code is in use by another night. Either way, look again.
   }
   throw new AuthError("busy_try_again", 409);
 }
@@ -185,20 +220,24 @@ export async function openRoom(accessToken: string): Promise<{ id: string; code:
 /** Finds an open room in the caller's family by its code and joins it. */
 export async function joinByCode(accessToken: string, rawCode: unknown): Promise<{ id: string; code: string }> {
   const caller = await callerMember(accessToken);
-  const code = typeof rawCode === "string" ? rawCode.trim().toUpperCase() : "";
-  if (!/^[A-Z]{4}$/.test(code)) throw new AuthError("invalid_room_code", 400);
-  const { data: room } = await serviceClient()
+  const code = typeof rawCode === "string" ? rawCode.replace(/\s/g, "").toUpperCase() : "";
+  // The 4-letter room code, or the 6-digit code from the night's link.
+  const column = /^[A-Z]{4}$/.test(code) ? "code" : /^[0-9]{6}$/.test(code) ? "join_code" : null;
+  if (!column) throw new AuthError("invalid_room_code", 400);
+  let query = serviceClient()
     .from("rooms")
     .select("id, code, family_id, last_activity_at")
-    .eq("code", code)
-    .eq("status", "open")
-    .maybeSingle();
+    .eq(column, code)
+    .eq("status", "open");
+  // A link code is only unique, and only live, while the night is unlocked.
+  if (column === "join_code") query = query.is("locked_at", null);
+  const { data: room } = await query.maybeSingle();
   if (!room || room.family_id !== caller.family_id) throw new AuthError("room_not_found", 404);
   if (isIdle(room.last_activity_at)) {
     await closeIdle(room.id);
     throw new AuthError("room_not_found", 404);
   }
-  const result = await act(accessToken, room.id, "join");
+  const result = await actAs(caller, room.id, "join");
   if (!result.ok) throw new AuthError(result.reason ?? "join_failed", 409);
   return { id: room.id, code: room.code };
 }

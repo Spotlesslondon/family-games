@@ -21,6 +21,8 @@ export interface ClientSession {
   accessToken: string;
   expiresAt: number | null; // seconds since epoch, as Supabase reports it
   member: { id: string; name: string; role: string; familyId: string };
+  /** Set when this phone joined by link: it may use this one room only. */
+  seat?: { roomId: string };
 }
 
 export class SessionUnavailable extends Error {

@@ -189,6 +189,20 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
     });
   }
 
+  if (action.type === "remove_player") {
+    // The host removes someone from the lobby (a wrong person from a WhatsApp
+    // group, say). Between games only, so no game is left half-played.
+    if (actor !== room.hostId) return reject("host_only");
+    const target = String(payload.memberId ?? "");
+    if (target === actor) return reject("cannot_remove_self");
+    if (!isMember(ctx, target)) return reject("target_not_in_room");
+    if (!betweenGames(room.phase)) return reject("game_in_progress");
+    return accept({
+      members: room.members.filter((m) => m.id !== target),
+      events: [{ memberId: target, type: "member_removed", payload: { by: actor } }],
+    });
+  }
+
   if (action.type === "close_room") {
     if (actor !== room.hostId) return reject("host_only");
     return accept({ status: "closed", events: [{ memberId: actor, type: "room_closed" }] });

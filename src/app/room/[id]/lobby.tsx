@@ -3,15 +3,51 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { avatarColour, initial, loadSession, memberClient, message, postAsMember, type ClientSession } from "@/lib/client/session";
+import {
+  avatarColour,
+  cachedToken,
+  forgetSeat,
+  forgetSession,
+  initial,
+  loadSession,
+  memberClient,
+  message,
+  postAsMember,
+  wasSeatIn,
+  type ClientSession,
+} from "@/lib/client/session";
 import { Reconnect } from "@/app/reconnect";
 
 interface RoomRow {
   id: string;
   code: string;
+  join_code: string | null;
+  locked_at: string | null;
   host_member_id: string;
   status: "open" | "closed";
   phase: string;
+}
+
+/** Why a phone that joined by link is no longer in the night. */
+type Ended = "left" | "removed" | "over" | "gone";
+
+const ENDED: Record<Ended, { title: string; body: string }> = {
+  left: { title: "You left the game night", body: "To join again, tap the host's link." },
+  removed: { title: "You are out of this game night", body: "The host took you out of the room. To join again, ask for the link." },
+  over: { title: "Game night is over", body: "The host has closed this room. Thanks for playing." },
+  gone: { title: "You are not in this game night any more", body: "If it is still going, tap the host's link to join again." },
+};
+
+/** End this phone's link session for good: on the server, then in memory. */
+async function endSeatSession() {
+  const token = cachedToken();
+  await fetch("/api/auth/signout", { method: "POST", headers: token ? { authorization: `Bearer ${token}` } : {} }).catch(() => {});
+  forgetSession();
+  forgetSeat();
+}
+
+function inviteUrl(joinCode: string): string {
+  return `${window.location.origin}/j/${joinCode}`;
 }
 
 interface Seat {
@@ -29,16 +65,20 @@ export function Lobby() {
   const [seats, setSeats] = useState<Seat[]>([]);
   const [error, setError] = useState<string | null>(null);
   const dbRef = useRef<SupabaseClient | null>(null);
+  const seatRef = useRef<{ memberId: string } | null>(null);
 
   const [offline, setOffline] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [ended, setEnded] = useState<Ended | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Every action asks the session store for a current token, so a game night
   // longer than the one-hour token keeps working.
   const act = useCallback(
-    async (type: string) => {
-      const res = await postAsMember("/api/room-action", { roomId: id, type }).catch(() => null);
+    async (type: string, payload?: Record<string, unknown>) => {
+      const res = await postAsMember("/api/room-action", { roomId: id, type, payload }).catch(() => null);
       if (!res) {
         setActionError(message("offline"));
         return null;
@@ -54,12 +94,31 @@ export function Lobby() {
     const db = dbRef.current;
     if (!db) return;
     const [{ data: r }, { data: inRoom }, { data: people }] = await Promise.all([
-      db.from("rooms").select("id, code, host_member_id, status, phase").eq("id", id).maybeSingle(),
+      db.from("rooms").select("id, code, join_code, locked_at, host_member_id, status, phase").eq("id", id).maybeSingle(),
       db.from("room_members").select("member_id, connected, joined_at").eq("room_id", id).order("joined_at"),
       db.from("members").select("id, display_name").order("created_at"),
     ]);
     if (!r) {
+      // A phone that joined by link reads nothing once its seat ends (0012).
+      if (wasSeatIn(id)) {
+        setEnded((e) => e ?? "gone");
+        endSeatSession();
+        return;
+      }
       setError("This room was not found.");
+      return;
+    }
+    // A phone that joined by link: if it is no longer among the people in an
+    // open room, the host removed it. (It can still read the room row itself.)
+    const seat = seatRef.current;
+    if (seat && r.status === "open" && !(inRoom ?? []).some((m) => m.member_id === seat.memberId)) {
+      setEnded((e) => e ?? "removed");
+      endSeatSession();
+      return;
+    }
+    if (seat && r.status === "closed") {
+      setEnded((e) => e ?? "over");
+      endSeatSession();
       return;
     }
     const order = (people ?? []).map((p) => p.id as string);
@@ -81,11 +140,17 @@ export function Lobby() {
       .then((s) => {
         if (cancelled) return;
         if (!s) {
+          if (wasSeatIn(id)) {
+            forgetSeat();
+            setEnded("gone");
+            return;
+          }
           router.replace("/join");
           return;
         }
         setOffline(false);
         dbRef.current = memberClient();
+        seatRef.current = s.seat ? { memberId: s.member.id } : null;
         setSession(s);
       })
       .catch(() => {
@@ -137,12 +202,64 @@ export function Lobby() {
 
   async function leave() {
     if ((await act("leave")) === null) return; // offline: stay, the message says why
+    if (session?.seat) {
+      setEnded("left");
+      await endSeatSession();
+      return;
+    }
     router.replace("/home");
+  }
+
+  async function removePlayer(memberId: string) {
+    if (confirmRemove !== memberId) {
+      setConfirmRemove(memberId); // a second tap removes, so a slip does nothing
+      return;
+    }
+    setConfirmRemove(null);
+    const out = await act("remove_player", { memberId });
+    if (out && out.ok === false) setActionError(message(out.reason));
+  }
+
+  async function setLock(locked: boolean) {
+    const res = await postAsMember("/api/rooms/lock", { roomId: id, locked }).catch(() => null);
+    const body = res ? await res.json().catch(() => ({})) : { error: "offline" };
+    if (!res?.ok) setActionError(message(body.error));
+    else reload();
+  }
+
+  async function share(joinCode: string) {
+    const url = inviteUrl(joinCode);
+    const text = `Join our game night on Asher Games: ${url}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ text });
+        return;
+      } catch {
+        // Closed the share sheet, or not allowed here: fall back to copying.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setActionError("Could not copy. The code is on screen to read out.");
+    }
   }
 
   async function closeRoom() {
     if ((await act("close_room")) === null) return;
     router.replace("/home");
+  }
+
+  if (ended) {
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-16">
+        <div className="font-display text-xl font-bold text-go">Asher Games</div>
+        <h1 className="font-display text-3xl font-semibold">{ENDED[ended].title}</h1>
+        <p className="text-lg text-muted">{ENDED[ended].body}</p>
+      </main>
+    );
   }
 
   if (offline) return <Reconnect onRetry={() => setAttempt((n) => n + 1)} />;
@@ -180,10 +297,36 @@ export function Lobby() {
         {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ground">You are host</span>}
       </div>
 
-      <div className="flex flex-col gap-1 rounded-3xl bg-surface px-5 py-4">
-        <span className="text-xs font-bold tracking-widest text-muted">ROOM CODE</span>
-        <span className="font-display text-5xl font-bold tracking-[0.3em] text-go">{room.code}</span>
-      </div>
+      {isHost && room.join_code && !room.locked_at ? (
+        <div className="flex flex-col gap-3 rounded-3xl bg-surface px-5 py-4">
+          <span className="text-xs font-bold tracking-widest text-muted">INVITE CODE</span>
+          <span className="font-display text-5xl font-bold tracking-[0.2em] text-go">{room.join_code}</span>
+          <span className="text-sm text-muted">Send the link to your group chat. Anyone with it can join until you lock the room.</span>
+          <div className="grid grid-cols-2 gap-3">
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(`Join our game night on Asher Games: ${inviteUrl(room.join_code)}`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-13 items-center justify-center rounded-full bg-go font-bold text-ground"
+            >
+              WhatsApp
+            </a>
+            <button type="button" onClick={() => share(room.join_code as string)} className="h-13 rounded-full border-2 border-line font-bold">
+              {copied ? "Link copied" : "Share link"}
+            </button>
+          </div>
+        </div>
+      ) : isHost ? (
+        <div className="flex items-center justify-between gap-3 rounded-3xl bg-surface px-5 py-4">
+          <span className="font-bold">Room locked. The link no longer works.</span>
+          <button type="button" onClick={() => setLock(false)} className="h-11 shrink-0 rounded-full border-2 border-line px-4 font-bold">Open again</button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1 rounded-3xl bg-surface px-5 py-4">
+          <span className="text-xs font-bold tracking-widest text-muted">YOU ARE</span>
+          <span className="font-display text-3xl font-bold text-go">{session.member.name}</span>
+        </div>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-bold tracking-widest text-muted">IN THE ROOM · {here}</h2>
@@ -201,6 +344,15 @@ export function Lobby() {
                 {s.id === room.host_member_id ? " · host" : ""}
                 {!s.connected && <span className="block font-semibold">away</span>}
               </span>
+              {isHost && s.id !== session.member.id && room.phase === "lobby" && (
+                <button
+                  type="button"
+                  onClick={() => removePlayer(s.id)}
+                  className={`h-9 rounded-full px-3 text-sm font-bold ${confirmRemove === s.id ? "bg-alert text-ground" : "border-2 border-line text-muted"}`}
+                >
+                  {confirmRemove === s.id ? "Tap to remove" : "Remove"}
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -210,7 +362,12 @@ export function Lobby() {
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
         {isHost ? (
           <>
-            <button type="button" disabled className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground opacity-60">Games arrive next: Mr White</button>
+            {room.join_code && !room.locked_at && (
+              <button type="button" onClick={() => setLock(true)} className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground">
+                Everyone is in: lock the room
+              </button>
+            )}
+            <button type="button" disabled className="h-15 rounded-full border-2 border-line font-display text-xl font-bold opacity-60">Games arrive next: Mr White</button>
             <button type="button" onClick={closeRoom} className="h-13 rounded-full border-2 border-line font-bold">End game night</button>
           </>
         ) : (

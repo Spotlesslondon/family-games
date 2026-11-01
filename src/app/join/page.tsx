@@ -22,6 +22,11 @@ export default function Join() {
   async function findFamily(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+    // Six numbers is a game night code from a host's link: join that night.
+    if (/^[0-9]{6}$/.test(code)) {
+      router.push(`/j/${code}`);
+      return;
+    }
     setBusy(true);
     const res = await fetch(`/api/family/members?code=${encodeURIComponent(code)}`);
     const body = await res.json().catch(() => ({}));
@@ -136,14 +141,14 @@ export default function Join() {
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-8 pt-14">
       <div className="font-display text-xl font-bold text-go">Asher Games</div>
       <h1 className="font-display text-4xl font-semibold">Join your family</h1>
-      <p className="text-muted">Type the six-letter family code. The family owner can find it on their phone.</p>
+      <p className="text-muted">Type the six-letter family code, or the six-number game night code the host sent.</p>
       <form onSubmit={findFamily} className="flex flex-col gap-4">
         <label className="flex flex-col gap-2">
-          <span className="font-bold">Family code</span>
+          <span className="font-bold">Code</span>
           <input
             className="h-16 rounded-2xl border-2 border-surface-2 bg-surface px-4 text-center font-display text-3xl font-bold uppercase tracking-[0.3em] text-go outline-none focus:border-go"
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6))}
+            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
             autoCapitalize="characters"
             autoComplete="off"
             required
@@ -151,7 +156,7 @@ export default function Join() {
         </label>
         {error && <p role="alert" className="font-bold text-alert">{error}</p>}
         <button type="submit" disabled={busy || code.length !== 6} className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground disabled:opacity-60">
-          {busy ? "Looking..." : "Find my family"}
+          {busy ? "Looking..." : /^[0-9]{6}$/.test(code) ? "Join game night" : "Find my family"}
         </button>
       </form>
     </main>

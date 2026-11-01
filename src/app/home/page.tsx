@@ -60,6 +60,11 @@ export default function Home() {
           router.replace("/join");
           return;
         }
+        // A phone that joined a night by link has no home screen: back to its night.
+        if (s.seat) {
+          router.replace(`/room/${s.seat.roomId}`);
+          return;
+        }
         setOffline(false);
         setSession(s);
         readFamily();

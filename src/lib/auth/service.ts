@@ -40,7 +40,7 @@ export interface SignedIn extends Session {
   family: { id: string; name: string; code: string };
 }
 
-function publicAuthClient(): SupabaseClient {
+export function publicAuthClient(): SupabaseClient {
   const url = process.env.SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be set");
@@ -131,18 +131,65 @@ export async function createFamily(input: NewMemberInput & { familyName: unknown
 // The owner adds a member.
 // ---------------------------------------------------------------------------
 
-export async function callerMember(accessToken: string) {
-  const db = serviceClient();
-  const { data, error } = await db.auth.getUser(accessToken);
-  if (error || !data.user) throw new AuthError("not_signed_in", 401);
-  const { data: member } = await db
+async function memberForUser(userId: string) {
+  const { data: member } = await serviceClient()
     .from("members")
     .select("id, family_id, role, display_name")
-    .eq("auth_user_id", data.user.id)
+    .eq("auth_user_id", userId)
     .maybeSingle();
   if (!member) throw new AuthError("not_a_member", 403);
   // A PIN lockout stops new PIN sign-ins only; someone already signed in keeps playing (0009).
   return member as { id: string; family_id: string; role: string; display_name: string };
+}
+
+/** The signed-in member behind a token. Phones that joined by link are not members here. */
+export async function callerMember(accessToken: string) {
+  const { data, error } = await serviceClient().auth.getUser(accessToken);
+  if (error || !data.user) throw new AuthError("not_signed_in", 401);
+  return memberForUser(data.user.id);
+}
+
+/** Who is calling: a signed-in member, or a phone sitting as someone in one open room. */
+export interface Caller {
+  kind: "member" | "seat";
+  id: string;
+  family_id: string;
+  role: string;
+  display_name: string;
+  /** Only for a seat: the one room it may act in. */
+  roomId: string | null;
+}
+
+/**
+ * The caller behind an access token. Members sign in with a PIN; everyone else
+ * joins a night by link as an anonymous phone holding a seat (0008). A seat is
+ * only good while its room is open and it has not been released (left,
+ * removed, or the night closed), so access ends the moment any of those happen.
+ */
+export async function caller(accessToken: string): Promise<Caller> {
+  const db = serviceClient();
+  const { data, error } = await db.auth.getUser(accessToken);
+  if (error || !data.user) throw new AuthError("not_signed_in", 401);
+  if (!data.user.is_anonymous) {
+    const m = await memberForUser(data.user.id);
+    return { kind: "member", ...m, roomId: null };
+  }
+  const { data: seats, error: seatError } = await db
+    .from("seats")
+    .select("member_id, room_id, family_id")
+    .eq("auth_user_id", data.user.id)
+    .is("released_at", null);
+  if (seatError) throw new AuthError("server_busy", 503, { reason: seatError.message });
+  for (const seat of seats ?? []) {
+    const [{ data: room }, { data: member }] = await Promise.all([
+      db.from("rooms").select("status").eq("id", seat.room_id).maybeSingle(),
+      db.from("members").select("id, family_id, role, display_name").eq("id", seat.member_id).maybeSingle(),
+    ]);
+    if (room?.status === "open" && member) {
+      return { kind: "seat", ...(member as Omit<Caller, "kind" | "roomId">), roomId: seat.room_id as string };
+    }
+  }
+  throw new AuthError("seat_ended", 401);
 }
 
 export async function addMember(

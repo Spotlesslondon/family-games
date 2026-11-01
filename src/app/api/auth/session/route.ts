@@ -3,7 +3,7 @@
 // Refresh tokens rotate, so the cookie is replaced every time.
 
 import { clearRefreshCookie, errorResponse, readRefreshCookie, setRefreshCookie } from "@/lib/auth/http";
-import { AuthError, callerMember, refresh } from "@/lib/auth/service";
+import { AuthError, caller, refresh } from "@/lib/auth/service";
 
 export async function POST() {
   try {
@@ -18,12 +18,22 @@ export async function POST() {
       if (err instanceof AuthError && err.status === 401) await clearRefreshCookie();
       throw err;
     }
+    // Refresh tokens rotate: store the new one before anything else can fail.
     await setRefreshCookie(session.refreshToken);
-    const member = await callerMember(session.accessToken);
+    let who;
+    try {
+      who = await caller(session.accessToken);
+    } catch (err) {
+      // A phone that joined by link whose night is over, or that left or was
+      // removed: nothing left to renew, so the phone is signed out.
+      if (err instanceof AuthError && err.code === "seat_ended") await clearRefreshCookie();
+      throw err;
+    }
     return Response.json({
       accessToken: session.accessToken,
       expiresAt: session.expiresAt,
-      member: { id: member.id, name: member.display_name, role: member.role, familyId: member.family_id },
+      member: { id: who.id, name: who.display_name, role: who.role, familyId: who.family_id },
+      ...(who.kind === "seat" ? { seat: { roomId: who.roomId } } : {}),
     });
   } catch (err) {
     return errorResponse(err);
