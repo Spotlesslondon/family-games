@@ -74,7 +74,7 @@ export function NightJoin() {
     setBusy(true);
     setError(null);
     const send = (extra: Record<string, unknown>) =>
-      fetch(`/api/j/${encodeURIComponent(code)}`, {
+      fetch(`/api/auth/join/${encodeURIComponent(code)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...body, ...extra }),
