@@ -1,9 +1,10 @@
 {
-  "name": "Family Games",
-  "short_name": "Family Games",
-  "start_url": "/",
+  "name": "Asher Games",
+  "short_name": "Asher Games",
+  "start_url": "/play",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1f2937",
+  "background_color": "#12162B",
+  "theme_color": "#12162B",
   "icons": []
 }

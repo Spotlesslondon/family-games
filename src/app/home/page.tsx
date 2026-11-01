@@ -139,7 +139,7 @@ export default function Home() {
     // End the session on the server first (it needs the token), then forget it here.
     await postAsMember("/api/auth/signout", {}).catch(() => null);
     forgetSession();
-    router.replace("/");
+    router.replace("/play");
   }
 
   if (offline) return <Reconnect onRetry={() => setAttempt((n) => n + 1)} />;
