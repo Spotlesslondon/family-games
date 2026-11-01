@@ -34,5 +34,10 @@ grant usage on schema public, auth to anon, authenticated, service_role;
 grant usage on schema auth to supabase_auth_admin;
 grant execute on function auth.jwt() to supabase_auth_admin;
 grant execute on function auth.jwt() to anon, authenticated, service_role;
-alter default privileges in schema public grant select on tables to anon, authenticated;
-alter default privileges in schema public grant all on tables to service_role;
+-- Match Supabase exactly: every role gets ALL on new tables, sequences and
+-- functions in public, and row level security does the blocking. (Before
+-- 1 Nov 2026 this shim granted only SELECT, which hid any table that forgot
+-- row level security; 06_hardening.sql now checks every table.)
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;

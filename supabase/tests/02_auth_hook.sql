@@ -48,9 +48,11 @@ begin
     raise exception 'child claims wrong: %', c;
   end if;
 
-  -- 3. A locked member gets no family claims.
+  -- 3. Changed 1 Nov 2026 (0009): a PIN lockout only stops NEW PIN sign-ins.
+  --    Someone already signed in keeps their claims, so wrong guesses by
+  --    somebody else cannot throw the host out mid-game.
   c := pg_temp.hook('11111111-0000-0000-0000-000000000003');
-  if c ? 'kind' or c ? 'family_id' or c ? 'member_id' then raise exception 'locked member got claims: %', c; end if;
+  if c ->> 'kind' is distinct from 'member' then raise exception 'locked member lost a live session: %', c; end if;
 
   -- 4. An approved screen gets screen claims for its one room.
   c := pg_temp.hook('22222222-0000-0000-0000-000000000001');
@@ -111,7 +113,7 @@ begin
   perform set_config('request.jwt.claims', c::text, true);
   execute 'set local role authenticated';
   select count(*) into n from members;
-  if n <> 0 then raise exception 'locked member token sees % members', n; end if;
+  if n <> 3 then raise exception 'signed-in locked member sees % members, expected 3', n; end if;
   reset role;
 end $$;
 

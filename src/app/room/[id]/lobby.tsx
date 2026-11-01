@@ -3,7 +3,8 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { avatarColour, initial, loadSession, memberClient, type ClientSession } from "@/lib/client/session";
+import { avatarColour, initial, loadSession, memberClient, message, postAsMember, type ClientSession } from "@/lib/client/session";
+import { Reconnect } from "@/app/reconnect";
 
 interface RoomRow {
   id: string;
@@ -29,18 +30,23 @@ export function Lobby() {
   const [error, setError] = useState<string | null>(null);
   const dbRef = useRef<SupabaseClient | null>(null);
 
+  const [offline, setOffline] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Every action asks the session store for a current token, so a game night
+  // longer than the one-hour token keeps working.
   const act = useCallback(
-    async (type: string, keepalive = false) => {
-      if (!session) return null;
-      const res = await fetch("/api/room-action", {
-        method: "POST",
-        keepalive,
-        headers: { "content-type": "application/json", authorization: `Bearer ${session.accessToken}` },
-        body: JSON.stringify({ roomId: id, type }),
-      });
-      return res.json().catch(() => null);
+    async (type: string) => {
+      const res = await postAsMember("/api/room-action", { roomId: id, type }).catch(() => null);
+      if (!res) {
+        setActionError(message("offline"));
+        return null;
+      }
+      setActionError(null);
+      return res.json().catch(() => ({}));
     },
-    [id, session]
+    [id]
   );
 
   // Read the room through the database rules, as this member.
@@ -70,15 +76,25 @@ export function Lobby() {
   }, [id]);
 
   useEffect(() => {
-    loadSession().then((s) => {
-      if (!s) {
-        router.replace("/join");
-        return;
-      }
-      dbRef.current = memberClient(s.accessToken);
-      setSession(s);
-    });
-  }, [router]);
+    let cancelled = false;
+    loadSession()
+      .then((s) => {
+        if (cancelled) return;
+        if (!s) {
+          router.replace("/join");
+          return;
+        }
+        setOffline(false);
+        dbRef.current = memberClient();
+        setSession(s);
+      })
+      .catch(() => {
+        if (!cancelled) setOffline(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router, attempt]);
 
   // Join on arrival, subscribe to changes, and say when this phone goes away.
   useEffect(() => {
@@ -96,16 +112,16 @@ export function Lobby() {
       .channel(`room-${id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${id}` }, () => reload())
       .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${id}` }, () => reload())
-      .subscribe();
+      // On every (re)subscribe, read the room again: changes made while the
+      // connection was down are not replayed.
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED" && alive) reload();
+      });
 
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
-        fetch("/api/room-action", {
-          method: "POST",
-          keepalive: true,
-          headers: { "content-type": "application/json", authorization: `Bearer ${session.accessToken}` },
-          body: JSON.stringify({ roomId: id, type: "presence", payload: { connected: false } }),
-        });
+        // Must be sent without waiting: the page may be frozen straight after.
+        postAsMember("/api/room-action", { roomId: id, type: "presence", payload: { connected: false } }, { keepalive: true }).catch(() => {});
       } else {
         act("join").then(() => reload());
       }
@@ -120,14 +136,16 @@ export function Lobby() {
   }, [session, id, act, reload]);
 
   async function leave() {
-    await act("leave");
+    if ((await act("leave")) === null) return; // offline: stay, the message says why
     router.replace("/home");
   }
 
   async function closeRoom() {
-    await act("close_room");
+    if ((await act("close_room")) === null) return;
     router.replace("/home");
   }
+
+  if (offline) return <Reconnect onRetry={() => setAttempt((n) => n + 1)} />;
 
   if (error) {
     return (
@@ -189,6 +207,7 @@ export function Lobby() {
       </section>
 
       <div className="mt-auto flex flex-col gap-3">
+        {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
         {isHost ? (
           <>
             <button type="button" disabled className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground opacity-60">Games arrive next: Mr White</button>

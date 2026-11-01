@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run verify && next build",
+    "verify": "tsc --noEmit && eslint src --quiet && vitest run",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",

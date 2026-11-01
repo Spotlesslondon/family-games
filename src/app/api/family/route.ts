@@ -1,10 +1,11 @@
 // POST /api/family: create a family and its owner, and sign the owner in.
 
-import { errorResponse, readJson, setRefreshCookie } from "@/lib/auth/http";
+import { errorResponse, rateLimit, readJson, setRefreshCookie } from "@/lib/auth/http";
 import { createFamily } from "@/lib/auth/service";
 
 export async function POST(request: Request) {
   try {
+    await rateLimit(request, "familyCreate");
     const body = await readJson(request);
     const signedIn = await createFamily({
       familyName: body.familyName,

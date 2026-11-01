@@ -1,46 +1,73 @@
 "use client";
 
-// Browser-side session: the access token lives in memory only. The refresh
-// token never reaches JavaScript; it stays in an HttpOnly cookie.
+// Browser-side session. The rules (renew before expiry, one renewal at a time,
+// blips are not sign-outs, sign-out beats renewal) live in session-store.ts
+// and are tested there.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createSessionStore, SessionUnavailable, type ClientSession } from "./session-store";
 
-export interface ClientSession {
-  accessToken: string;
-  expiresAt: number | null;
-  member: { id: string; name: string; role: string; familyId: string };
+export { SessionUnavailable, type ClientSession };
+
+// Serialise renewals across tabs on the same phone, where the browser allows it.
+function withLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  return locks ? (locks.request("asher-session-renew", fn) as Promise<T>) : fn();
 }
 
-// Kept in memory for the life of the open page, so moving between screens does
-// not trade the refresh cookie again. A full reload starts empty.
-let current: ClientSession | null = null;
+const store = createSessionStore({
+  fetchSession: () => fetch("/api/auth/session", { method: "POST" }),
+  now: () => Date.now(),
+  withLock,
+});
 
-/** The signed-in member's session. Reuses the one in memory while it has more than a minute left. */
-export async function loadSession(): Promise<ClientSession | null> {
-  if (current && current.expiresAt !== null && current.expiresAt * 1000 - Date.now() > 60_000) {
-    return current;
-  }
-  const res = await fetch("/api/auth/session", { method: "POST" });
-  if (!res.ok) {
-    current = null;
-    return null;
-  }
-  current = (await res.json()) as ClientSession;
-  return current;
-}
+/** The signed-in member's session, renewed if needed. Null when signed out; throws SessionUnavailable on a blip. */
+export const loadSession = (): Promise<ClientSession | null> => store.load();
+
+/** A current access token for a request to our own server. */
+export const currentToken = (): Promise<string | null> => store.token();
+
+/** The token in memory right now, for sends that cannot wait (the page being hidden). */
+export const cachedToken = (): string | null => store.cachedToken();
 
 /** Drop the in-memory session. Call on sign-in and sign-out so a shared phone never shows the last person. */
-export function forgetSession(): void {
-  current = null;
+export const forgetSession = (): void => store.forget();
+
+let client: SupabaseClient | null = null;
+
+/**
+ * The one Supabase client for this page. It reads as the signed-in member,
+ * through row level security, and asks the store for a current token on every
+ * request and every live-update heartbeat, so it never runs on an expired one.
+ */
+export function memberClient(): SupabaseClient {
+  if (!client) {
+    client = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY as string,
+      { accessToken: async () => (await store.token().catch(() => store.cachedToken())) ?? null }
+    );
+  }
+  return client;
 }
 
-/** A Supabase client that reads as the signed-in member, through row level security. */
-export function memberClient(accessToken: string): SupabaseClient {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY as string,
-    { accessToken: async () => accessToken }
-  );
+/**
+ * POST to our own API as the signed-in member, with a current token. If the
+ * server says the token is no good, renew once and retry.
+ */
+export async function postAsMember(path: string, body: unknown, init?: { keepalive?: boolean }): Promise<Response> {
+  const send = (token: string | null) =>
+    fetch(path, {
+      method: "POST",
+      keepalive: init?.keepalive,
+      headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body ?? {}),
+    });
+  if (init?.keepalive) return send(store.cachedToken());
+  const res = await send(await store.token());
+  if (res.status !== 401) return res;
+  store.invalidate();
+  return send(await store.token());
 }
 
 export const AVATAR_COLOURS = ["#FFC93C", "#8FA8FF", "#6FD3B7", "#FF7A66", "#E3A6F2"];
@@ -69,6 +96,9 @@ const MESSAGES: Record<string, string> = {
   room_not_found: "That game night has ended.",
   game_in_progress: "A game is already running. Wait for the next one.",
   busy_try_again: "Lots happening at once. Try again.",
+  offline: "Could not reach Asher Games. Check your connection and try again.",
+  too_many_requests: "Too many tries from this Wi-Fi. Wait a few minutes and try again.",
+  server_busy: "Asher Games is busy. Try again in a moment.",
 };
 
 export function message(code: string | undefined, extra?: { attemptsLeft?: number }): string {

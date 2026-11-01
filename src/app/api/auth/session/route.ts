@@ -13,7 +13,9 @@ export async function POST() {
     try {
       session = await refresh(token);
     } catch (err) {
-      await clearRefreshCookie();
+      // Only an invalid refresh token signs the phone out. A Supabase hiccup
+      // (503) leaves the cookie alone so the next try can succeed.
+      if (err instanceof AuthError && err.status === 401) await clearRefreshCookie();
       throw err;
     }
     await setRefreshCookie(session.refreshToken);

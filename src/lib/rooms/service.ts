@@ -41,7 +41,7 @@ async function loadRoom(roomId: string, familyId: string): Promise<Loaded> {
 
   const [{ data: inRoom }, { data: family }, { data: secrets }] = await Promise.all([
     db.from("room_members").select("member_id, connected, joined_at").eq("room_id", roomId).order("joined_at"),
-    db.from("members").select("id, display_name, date_of_birth, role").eq("family_id", familyId),
+    db.from("members").select("id, display_name, date_of_birth, age_band, role").eq("family_id", familyId),
     db.from("room_private").select("member_id, state").eq("room_id", roomId),
   ]);
 
@@ -60,7 +60,8 @@ async function loadRoom(roomId: string, familyId: string): Promise<Loaded> {
   const players: Player[] = (family ?? []).map((m) => ({
     id: m.id,
     name: m.display_name,
-    ageBand: ageBand(m.date_of_birth, today()),
+    // People saved from a guest have an age band instead of a date of birth.
+    ageBand: m.age_band ?? ageBand(m.date_of_birth, today()),
     role: m.role,
   }));
 
@@ -121,45 +122,64 @@ export async function act(accessToken: string, roomId: string, type: string, pay
   throw new AuthError("busy_try_again", 409);
 }
 
-/** Opens a room, or returns the family's room that is already open. Owners and grown-ups only. */
+/** A night with no activity for this long is closed rather than reused. */
+export const IDLE_CLOSE_MS = 30 * 60_000;
+
+export function isIdle(lastActivityAt: string | null | undefined, now = Date.now()): boolean {
+  return !!lastActivityAt && now - Date.parse(lastActivityAt) > IDLE_CLOSE_MS;
+}
+
+async function closeIdle(roomId: string): Promise<void> {
+  await serviceClient()
+    .from("rooms")
+    .update({ status: "closed", closed_at: new Date().toISOString() })
+    .eq("id", roomId)
+    .eq("status", "open");
+}
+
+async function findOpenRoom(familyId: string) {
+  const { data, error } = await serviceClient()
+    .from("rooms")
+    .select("id, code, last_activity_at")
+    .eq("family_id", familyId)
+    .eq("status", "open")
+    .maybeSingle();
+  if (error) throw new AuthError("server_busy", 503, { reason: error.message });
+  return data as { id: string; code: string; last_activity_at: string } | null;
+}
+
+/** Opens a room, or rejoins the family's room that is already open. Owners and grown-ups only. */
 export async function openRoom(accessToken: string): Promise<{ id: string; code: string }> {
   const caller = await callerMember(accessToken);
   if (caller.role !== "owner" && caller.role !== "adult") throw new AuthError("grown_ups_host", 403);
-  const db = serviceClient();
-
-  const { data: existing } = await db
-    .from("rooms")
-    .select("id, code")
-    .eq("family_id", caller.family_id)
-    .eq("status", "open")
-    .maybeSingle();
-  if (existing) {
-    await act(accessToken, existing.id, "join");
-    return existing;
-  }
 
   for (let attempt = 0; attempt < 5; attempt++) {
-    const code = roomCode();
-    const { data, error } = await db
-      .from("rooms")
-      .insert({ family_id: caller.family_id, code, host_member_id: caller.id, phase: LOBBY })
-      .select("id, code")
-      .single();
-    if (error) {
-      if (error.code === "23505") continue;
-      throw new AuthError("room_create_failed", 500, { reason: error.message });
+    const existing = await findOpenRoom(caller.family_id);
+    if (existing && isIdle(existing.last_activity_at)) {
+      await closeIdle(existing.id);
+      continue;
     }
-    await db.from("room_members").insert({ room_id: data.id, member_id: caller.id, family_id: caller.family_id });
-    await db.from("game_events").insert({
-      family_id: caller.family_id,
-      room_id: data.id,
-      member_id: caller.id,
-      event_type: "room_opened",
-      payload: { code },
+    if (existing) {
+      await act(accessToken, existing.id, "join");
+      return { id: existing.id, code: existing.code };
+    }
+
+    // Room, host seat and opening event in one step (0009). The database
+    // allows one open room per family, so a second tap at the same moment
+    // fails here and the loop rejoins the room the first tap opened.
+    const code = roomCode();
+    const { data, error } = await serviceClient().rpc("open_room", {
+      p_family: caller.family_id,
+      p_host: caller.id,
+      p_code: code,
+      p_phase: LOBBY,
     });
-    return data;
+    if (!error) return data as { id: string; code: string };
+    if (error.code !== "23505") throw new AuthError("room_create_failed", 500, { reason: error.message });
+    // 23505: either another tap opened the family's room, or the 4-letter code
+    // is in use by another family. Either way, look again.
   }
-  throw new AuthError("room_create_failed", 500);
+  throw new AuthError("busy_try_again", 409);
 }
 
 /** Finds an open room in the caller's family by its code and joins it. */
@@ -169,11 +189,15 @@ export async function joinByCode(accessToken: string, rawCode: unknown): Promise
   if (!/^[A-Z]{4}$/.test(code)) throw new AuthError("invalid_room_code", 400);
   const { data: room } = await serviceClient()
     .from("rooms")
-    .select("id, code, family_id")
+    .select("id, code, family_id, last_activity_at")
     .eq("code", code)
     .eq("status", "open")
     .maybeSingle();
   if (!room || room.family_id !== caller.family_id) throw new AuthError("room_not_found", 404);
+  if (isIdle(room.last_activity_at)) {
+    await closeIdle(room.id);
+    throw new AuthError("room_not_found", 404);
+  }
   const result = await act(accessToken, room.id, "join");
   if (!result.ok) throw new AuthError(result.reason ?? "join_failed", 409);
   return { id: room.id, code: room.code };

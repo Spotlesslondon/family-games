@@ -1,11 +1,12 @@
 // GET  /api/family/members?code=ABCDEF: names in a family, for "who is playing".
 // POST /api/family/members: the owner adds a member (Authorization: Bearer).
 
-import { bearer, errorResponse, readJson } from "@/lib/auth/http";
+import { bearer, errorResponse, rateLimit, readJson } from "@/lib/auth/http";
 import { addMember, AuthError, listMembers } from "@/lib/auth/service";
 
 export async function GET(request: Request) {
   try {
+    await rateLimit(request, "familyLookup");
     const code = new URL(request.url).searchParams.get("code");
     return Response.json(await listMembers(code));
   } catch (err) {

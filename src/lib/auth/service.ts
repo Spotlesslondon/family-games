@@ -16,8 +16,8 @@ import {
   verifyPin,
 } from "./crypto";
 
-export const MAX_PIN_ATTEMPTS = 5;
-export const LOCK_MINUTES = 15;
+// PIN attempts and lockouts are counted in the database: see
+// pin_attempt_start and pin_attempt_finish in migration 0009.
 
 export class AuthError extends Error {
   constructor(
@@ -137,11 +137,11 @@ export async function callerMember(accessToken: string) {
   if (error || !data.user) throw new AuthError("not_signed_in", 401);
   const { data: member } = await db
     .from("members")
-    .select("id, family_id, role, display_name, locked_until")
+    .select("id, family_id, role, display_name")
     .eq("auth_user_id", data.user.id)
     .maybeSingle();
   if (!member) throw new AuthError("not_a_member", 403);
-  if (member.locked_until && Date.parse(member.locked_until) > Date.now()) throw new AuthError("locked", 423);
+  // A PIN lockout stops new PIN sign-ins only; someone already signed in keeps playing (0009).
   return member as { id: string; family_id: string; role: string; display_name: string };
 }
 
@@ -208,32 +208,26 @@ export async function signInWithPin(rawCode: unknown, memberId: unknown, pin: un
   const { data: family } = await db.from("families").select("id, name").eq("code", code).maybeSingle();
   if (!family) throw new AuthError("family_not_found", 404);
 
-  const { data: member } = await db
-    .from("members")
-    .select("id, display_name, role, pin_hash, failed_pins, locked_until")
-    .eq("id", memberId)
-    .eq("family_id", family.id)
-    .maybeSingle();
-  if (!member) throw new AuthError("member_not_found", 404);
+  // The attempt is counted in the database BEFORE the PIN is checked, in one
+  // statement, so parallel guesses cannot slip past the lock (0009).
+  const { data: started, error: startError } = await db.rpc("pin_attempt_start", {
+    p_member: memberId,
+    p_family: family.id,
+  });
+  if (startError) throw new AuthError("server_busy", 503, { reason: startError.message });
+  const attempt = started as { status: string; pin_hash?: string; name?: string; role?: string; until?: string };
+  // Same answer for "no such person" and "wrong PIN", so guessing reveals nothing.
+  if (attempt.status === "no_member") throw new AuthError("wrong_pin", 401);
+  if (attempt.status === "locked") throw new AuthError("locked", 423, { until: attempt.until });
 
-  if (member.locked_until && Date.parse(member.locked_until) > Date.now()) {
-    throw new AuthError("locked", 423, { until: member.locked_until });
+  const correct = typeof pin === "string" && verifyPin(pin, attempt.pin_hash);
+  const { data: finished } = await db.rpc("pin_attempt_finish", { p_member: memberId, p_correct: correct });
+  if (!correct) {
+    const result = (finished ?? {}) as { status?: string; until?: string; attempts_left?: number };
+    if (result.status === "locked") throw new AuthError("locked", 423, { until: result.until });
+    throw new AuthError("wrong_pin", 401, { attemptsLeft: result.attempts_left });
   }
-
-  if (typeof pin !== "string" || !verifyPin(pin, member.pin_hash)) {
-    const failed = (member.failed_pins ?? 0) + 1;
-    if (failed >= MAX_PIN_ATTEMPTS) {
-      const until = new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString();
-      await db.from("members").update({ failed_pins: 0, locked_until: until }).eq("id", member.id);
-      throw new AuthError("locked", 423, { until });
-    }
-    await db.from("members").update({ failed_pins: failed }).eq("id", member.id);
-    throw new AuthError("wrong_pin", 401, { attemptsLeft: MAX_PIN_ATTEMPTS - failed });
-  }
-
-  if (member.failed_pins || member.locked_until) {
-    await db.from("members").update({ failed_pins: 0, locked_until: null }).eq("id", member.id);
-  }
+  const member = { id: memberId, display_name: attempt.name as string, role: attempt.role as string };
 
   const { data, error } = await publicAuthClient().auth.signInWithPassword({
     email: memberEmail(member.id),
@@ -254,8 +248,19 @@ export async function signInWithPin(rawCode: unknown, memberId: unknown, pin: un
 // Refresh: swaps the cookie's refresh token for a new access token.
 // ---------------------------------------------------------------------------
 
+/**
+ * True for a network failure or a Supabase outage, as opposed to a refresh
+ * token that is genuinely invalid. Only the latter may sign someone out.
+ */
+export function isTransient(error: { status?: number; name?: string }): boolean {
+  if (error.name === "AuthRetryableFetchError") return true;
+  const status = error.status ?? 0;
+  return status === 0 || status === 429 || status >= 500;
+}
+
 export async function refresh(refreshToken: string): Promise<Session> {
   const { data, error } = await publicAuthClient().auth.refreshSession({ refresh_token: refreshToken });
+  if (error && isTransient(error)) throw new AuthError("auth_unavailable", 503);
   if (error || !data.session) throw new AuthError("session_expired", 401);
   return {
     accessToken: data.session.access_token,

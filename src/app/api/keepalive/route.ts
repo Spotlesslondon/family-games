@@ -14,9 +14,12 @@ export async function GET() {
     return new Response("unauthorised", { status: 401 });
   }
 
-  const { error } = await serviceClient().from("families").select("id").limit(1);
+  const db = serviceClient();
+  const { error } = await db.from("families").select("id").limit(1);
+  // Clear rate-limit windows older than a day.
+  const { data: pruned } = await db.rpc("rate_limits_prune");
   if (error) {
     return Response.json({ ok: false, error: error.message }, { status: 500 });
   }
-  return Response.json({ ok: true, at: new Date().toISOString() });
+  return Response.json({ ok: true, at: new Date().toISOString(), pruned: pruned ?? null });
 }

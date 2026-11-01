@@ -7,14 +7,18 @@ begin;
 -- Two hosts' accounts. Family A has a host, a child, a gran and an uni friend.
 insert into families (id, name, code, owner_user_id) values
   ('a0000000-0000-0000-0000-000000000001', 'Host A', 'JMAAAA', gen_random_uuid()),
-  ('b0000000-0000-0000-0000-000000000001', 'Host B', 'JMBBBB', gen_random_uuid());
+  ('b0000000-0000-0000-0000-000000000001', 'Host B', 'JMBBBB', gen_random_uuid()),
+  ('c0000000-0000-0000-0000-000000000001', 'Host C', 'JMCCCC', gen_random_uuid()),
+  ('d0000000-0000-0000-0000-000000000001', 'Host D', 'JMDDDD', gen_random_uuid());
 
 insert into members (id, family_id, display_name, date_of_birth, age_band, role, pin_hash, auth_user_id) values
   ('a0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-000000000001', 'Host',   '1985-01-01', null, 'owner',  'scrypt$x', '3a000000-0000-0000-0000-000000000001'),
   ('a0000000-0000-0000-0000-00000000000b', 'a0000000-0000-0000-0000-000000000001', 'Kid',    null, '6-8',  'member', null, null),
   ('a0000000-0000-0000-0000-00000000000c', 'a0000000-0000-0000-0000-000000000001', 'Gran',   null, '16+',  'member', null, null),
   ('a0000000-0000-0000-0000-00000000000d', 'a0000000-0000-0000-0000-000000000001', 'UniMate', null, '16+', 'member', null, null),
-  ('b0000000-0000-0000-0000-00000000000a', 'b0000000-0000-0000-0000-000000000001', 'Other',  '1990-01-01', null, 'owner', 'scrypt$y', '3b000000-0000-0000-0000-000000000001');
+  ('b0000000-0000-0000-0000-00000000000a', 'b0000000-0000-0000-0000-000000000001', 'Other',  '1990-01-01', null, 'owner', 'scrypt$y', '3b000000-0000-0000-0000-000000000001'),
+  ('c0000000-0000-0000-0000-00000000000a', 'c0000000-0000-0000-0000-000000000001', 'HostC',  '1990-01-01', null, 'owner', 'scrypt$c', null),
+  ('d0000000-0000-0000-0000-00000000000a', 'd0000000-0000-0000-0000-000000000001', 'HostD',  '1990-01-01', null, 'owner', 'scrypt$d', null);
 
 -- 1. People rules: age must be known; anyone who signs in needs a PIN.
 do $$
@@ -56,7 +60,7 @@ end $$;
 -- 3. Join codes: unique while live, reusable once a night is locked.
 insert into rooms (id, family_id, code, host_member_id, join_code, list_id) values
   ('a2000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'GRAN', 'a0000000-0000-0000-0000-00000000000a', '482913', 'a1000000-0000-0000-0000-000000000001'),
-  ('a2000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'UNIS', 'a0000000-0000-0000-0000-00000000000a', '111111', 'a1000000-0000-0000-0000-000000000002'),
+  ('a2000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000001', 'UNIS', 'c0000000-0000-0000-0000-00000000000a', '111111', null),
   ('b2000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'BBBB', 'b0000000-0000-0000-0000-00000000000a', '222222', null);
 
 do $$
@@ -64,14 +68,14 @@ declare before_ts timestamptz; after_ts timestamptz;
 begin
   begin
     insert into rooms (family_id, code, host_member_id, join_code)
-      values ('b0000000-0000-0000-0000-000000000001', 'DUPE', 'b0000000-0000-0000-0000-00000000000a', '482913');
+      values ('d0000000-0000-0000-0000-000000000001', 'DUPE', 'd0000000-0000-0000-0000-00000000000a', '482913');
     raise exception 'two live rooms got the same join code';
   exception when unique_violation then null;
   end;
 
   update rooms set locked_at = now() where id = 'a2000000-0000-0000-0000-000000000002';
   insert into rooms (family_id, code, host_member_id, join_code)
-    values ('b0000000-0000-0000-0000-000000000001', 'REUS', 'b0000000-0000-0000-0000-00000000000a', '111111');
+    values ('d0000000-0000-0000-0000-000000000001', 'REUS', 'd0000000-0000-0000-0000-00000000000a', '111111');
 
   -- 4. Any change to a room counts as activity.
   update rooms set last_activity_at = now() - interval '1 hour' where id = 'a2000000-0000-0000-0000-000000000001';

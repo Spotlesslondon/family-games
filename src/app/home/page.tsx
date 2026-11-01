@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { avatarColour, forgetSession, initial, loadSession, memberClient, message, type ClientSession } from "@/lib/client/session";
+import { avatarColour, forgetSession, initial, loadSession, memberClient, message, postAsMember, type ClientSession } from "@/lib/client/session";
+import { Reconnect } from "@/app/reconnect";
 
 interface Row {
   id: string;
@@ -31,8 +32,8 @@ export default function Home() {
 
   // Everything below is read with the member's own token, through the
   // database rules: if the sign-in claims were wrong, these lists come back empty.
-  const readFamily = useCallback(async (s: ClientSession) => {
-    const db = memberClient(s.accessToken);
+  const readFamily = useCallback(async () => {
+    const db = memberClient();
     const [{ data: fam, error: famError }, { data: people, error: peopleError }, { data: room }] = await Promise.all([
       db.from("families").select("name, code").maybeSingle(),
       db.from("members").select("id, display_name, role").order("created_at"),
@@ -47,32 +48,42 @@ export default function Home() {
     setRows((people ?? []) as Row[]);
   }, []);
 
+  const [offline, setOffline] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
-    loadSession().then((s) => {
-      if (cancelled) return;
-      if (!s) {
-        router.replace("/join");
-        return;
-      }
-      setSession(s);
-      readFamily(s);
-    });
+    loadSession()
+      .then((s) => {
+        if (cancelled) return;
+        if (!s) {
+          router.replace("/join");
+          return;
+        }
+        setOffline(false);
+        setSession(s);
+        readFamily();
+      })
+      .catch(() => {
+        // A network blip or a server error is not a sign-out: offer a retry.
+        if (!cancelled) setOffline(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [router, readFamily]);
+  }, [router, readFamily, attempt]);
 
   async function addPerson(event: React.FormEvent) {
     event.preventDefault();
     if (!session) return;
     setFormError(null);
     setBusy(true);
-    const res = await fetch("/api/family/members", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${session.accessToken}` },
-      body: JSON.stringify({ name, dateOfBirth, pin, role: grownUp ? "adult" : "member" }),
-    });
+    const res = await postAsMember("/api/family/members", { name, dateOfBirth, pin, role: grownUp ? "adult" : "member" }).catch(() => null);
+    if (!res) {
+      setBusy(false);
+      setFormError(message("offline"));
+      return;
+    }
     const body = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
@@ -83,18 +94,19 @@ export default function Home() {
     setDateOfBirth("");
     setPin("");
     setGrownUp(false);
-    readFamily(session);
+    readFamily();
   }
 
   async function enterRoom(path: "/api/rooms" | "/api/rooms/join") {
     if (!session) return;
     setRoomError(null);
     setRoomBusy(true);
-    const res = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${session.accessToken}` },
-      body: JSON.stringify(openRoom ? { code: openRoom.code } : {}),
-    });
+    const res = await postAsMember(path, openRoom ? { code: openRoom.code } : {}).catch(() => null);
+    if (!res) {
+      setRoomBusy(false);
+      setRoomError(message("offline"));
+      return;
+    }
     const body = await res.json().catch(() => ({}));
     setRoomBusy(false);
     if (!res.ok || !body.room) {
@@ -105,11 +117,13 @@ export default function Home() {
   }
 
   async function signOut() {
+    // End the session on the server first (it needs the token), then forget it here.
+    await postAsMember("/api/auth/signout", {}).catch(() => null);
     forgetSession();
-    await fetch("/api/auth/signout", { method: "POST" });
     router.replace("/");
   }
 
+  if (offline) return <Reconnect onRetry={() => setAttempt((n) => n + 1)} />;
   if (!session) {
     return <main className="flex flex-1 items-center justify-center text-muted">Loading...</main>;
   }
