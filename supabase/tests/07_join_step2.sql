@@ -39,21 +39,19 @@ begin
   insert into seats (room_id, family_id, member_id, auth_user_id) values (v_room, 'f0000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-00000000000b', '9e000000-0000-0000-0000-0000000000cc');
 
   -- 5. Guests are people on the account, marked as guests.
+  -- (checked below with 8: closing a night releases its seats)
   select count(*) into n from members where is_guest and family_id = 'f0000000-0000-0000-0000-000000000001';
   if n <> 1 then raise exception 'guest flag not stored'; end if;
 end $$;
 
--- 6. Phones cannot read the guest flag or call open_room.
+-- 6. Phones can read the guest flag but cannot call open_room.
 select set_config('request.jwt.claims',
   '{"role":"authenticated","kind":"member","member_role":"owner","family_id":"f0000000-0000-0000-0000-000000000001","member_id":"f0000000-0000-0000-0000-00000000000a"}', true);
 set local role authenticated;
 do $$
 begin
-  begin
-    perform is_guest from members limit 1;
-    raise exception 'phone could read members.is_guest';
-  exception when insufficient_privilege then null;
-  end;
+  -- members.is_guest is readable (0013): the host's screen marks guests.
+  perform is_guest from members limit 1;
   begin
     perform public.open_room(gen_random_uuid(), gen_random_uuid(), 'XXXX', 'lobby', '000000', null);
     raise exception 'phone could open a room directly';
@@ -103,3 +101,26 @@ begin
 end $$;
 rollback;
 \echo 07_join_step2 removed-phone: PASS
+
+-- 8. Closing a night releases every seat in it (0013).
+begin;
+insert into families (id, name, code, owner_user_id) values
+  ('f2000000-0000-0000-0000-000000000001', 'Family H', 'JSHHHH', gen_random_uuid());
+insert into members (id, family_id, display_name, date_of_birth, age_band, role, pin_hash, auth_user_id) values
+  ('f2000000-0000-0000-0000-00000000000a', 'f2000000-0000-0000-0000-000000000001', 'Host', '1980-01-01', null, 'owner', 'scrypt$x', '8f200000-0000-0000-0000-00000000000a'),
+  ('f2000000-0000-0000-0000-00000000000b', 'f2000000-0000-0000-0000-000000000001', 'Kid', null, '9-11', 'member', null, null);
+insert into rooms (id, family_id, code, host_member_id, phase, join_code) values
+  ('f2000000-0000-0000-0000-0000000000e1', 'f2000000-0000-0000-0000-000000000001', 'JSHR', 'f2000000-0000-0000-0000-00000000000a', 'lobby', '333444');
+insert into room_members (room_id, member_id, family_id) values
+  ('f2000000-0000-0000-0000-0000000000e1', 'f2000000-0000-0000-0000-00000000000b', 'f2000000-0000-0000-0000-000000000001');
+insert into seats (room_id, family_id, member_id, auth_user_id) values
+  ('f2000000-0000-0000-0000-0000000000e1', 'f2000000-0000-0000-0000-000000000001', 'f2000000-0000-0000-0000-00000000000b', '9e200000-0000-0000-0000-00000000000b');
+update rooms set status = 'closed', closed_at = now() where id = 'f2000000-0000-0000-0000-0000000000e1';
+do $$
+begin
+  if exists (select 1 from seats where room_id = 'f2000000-0000-0000-0000-0000000000e1' and released_at is null) then
+    raise exception 'closing a night left a live seat';
+  end if;
+end $$;
+rollback;
+\echo 07_join_step2 close-releases: PASS

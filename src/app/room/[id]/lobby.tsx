@@ -288,7 +288,7 @@ export function Lobby() {
   }
 
   const isHost = room.host_member_id === session.member.id;
-  const here = seats.filter((s) => s.connected).length;
+  const here = seats.length; // everyone in the room; anyone away is marked on their avatar
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-12">

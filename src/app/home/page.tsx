@@ -9,6 +9,7 @@ interface Row {
   id: string;
   display_name: string;
   role: string;
+  is_guest: boolean;
 }
 
 const field = "h-13 rounded-2xl border-2 border-surface-2 bg-ground px-4 text-lg text-ink outline-none focus:border-go";
@@ -36,7 +37,7 @@ export default function Home() {
     const db = memberClient();
     const [{ data: fam, error: famError }, { data: people, error: peopleError }, { data: room }] = await Promise.all([
       db.from("families").select("name, code").maybeSingle(),
-      db.from("members").select("id, display_name, role").order("created_at"),
+      db.from("members").select("id, display_name, role, is_guest").order("created_at"),
       db.from("rooms").select("id, code").eq("status", "open").maybeSingle(),
     ]);
     setOpenRoom((room as { id: string; code: string } | null) ?? null);
@@ -192,7 +193,7 @@ export default function Home() {
                 {initial(r.display_name)}
               </span>
               <span className="flex-1 text-lg font-bold">{r.display_name}</span>
-              <span className="text-sm text-muted">{r.role === "owner" ? "Owner" : r.role === "adult" ? "Grown-up" : ""}</span>
+              <span className="text-sm text-muted">{r.role === "owner" ? "Owner" : r.role === "adult" ? "Grown-up" : r.is_guest ? "Guest" : ""}</span>
             </li>
           ))}
         </ul>
