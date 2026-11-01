@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "npm run verify && next build",
-    "verify": "tsc --noEmit && eslint src --quiet && vitest run",
+    "verify": "next typegen && tsc --noEmit && eslint src --quiet && vitest run",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
