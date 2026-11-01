@@ -84,7 +84,13 @@ export default function ComingSoon() {
     <div className={`${reading.className} flex flex-1 flex-col bg-[#FFF1CF] text-[#111111]`}>
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-5 pt-6">
         <Wordmark />
-        <Tag>Coming soon</Tag>
+        <a
+          href="/join"
+          className="inline-flex h-11 items-center rounded-md border-[3px] bg-white px-4 font-bold shadow-[3px_3px_0_#111111] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+          style={{ borderColor: INK }}
+        >
+          Sign in
+        </a>
       </header>
 
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-14 px-5 pb-16 pt-8">
@@ -94,13 +100,25 @@ export default function ComingSoon() {
               The game where putting your phone down means losing
             </h1>
             <p className="text-xl leading-snug">Secret words, fibbing, buzzers and a quiz for every age. Coming soon.</p>
-            <a
-              href="#games"
-              className="mt-1 inline-flex h-14 w-fit items-center rounded-md border-4 bg-[#FFD23F] px-6 text-lg font-bold shadow-[4px_4px_0_#111111] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none"
-              style={{ borderColor: INK }}
-            >
-              See what is coming
-            </a>
+            <div className="mt-1 flex flex-wrap gap-3">
+              <a
+                href="/start"
+                className="inline-flex h-14 w-fit items-center rounded-md border-4 bg-[#FFD23F] px-6 text-lg font-bold shadow-[4px_4px_0_#111111] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none"
+                style={{ borderColor: INK }}
+              >
+                Start your family
+              </a>
+              <a
+                href="#games"
+                className="inline-flex h-14 w-fit items-center rounded-md border-4 bg-white px-6 text-lg font-bold shadow-[4px_4px_0_#111111] transition-transform active:translate-x-1 active:translate-y-1 active:shadow-none"
+                style={{ borderColor: INK }}
+              >
+                See the games
+              </a>
+            </div>
+            <p className="text-base">
+              Already have a family? <a href="/join" className="font-bold underline underline-offset-4">Sign in</a>. Invited to a game night? Tap the link you were sent.
+            </p>
           </div>
           <div className="rounded-xl border-4 bg-[#2F6BFF] p-4 shadow-[6px_6px_0_#111111] sm:p-6" style={{ borderColor: INK }}>
             <HouseTrio className="block h-auto w-full" />
