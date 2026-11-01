@@ -9,6 +9,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { avatarColour, initial, loadSession, memberClient } from "@/lib/client/session";
+import type { MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
 
 interface RoomRow {
   code: string;
@@ -16,6 +17,9 @@ interface RoomRow {
   locked_at: string | null;
   host_member_id: string;
   status: "open" | "closed";
+  current_game: string | null;
+  phase: string;
+  state: MrWhitePublic;
 }
 
 interface Person {
@@ -38,7 +42,7 @@ export function BigScreen() {
     const db = dbRef.current;
     if (!db) return;
     const [{ data: r }, { data: inRoom }, { data: names }] = await Promise.all([
-      db.from("rooms").select("code, join_code, locked_at, host_member_id, status").eq("id", id).maybeSingle(),
+      db.from("rooms").select("code, join_code, locked_at, host_member_id, status, current_game, phase, state").eq("id", id).maybeSingle(),
       db.from("room_members").select("member_id, connected, joined_at").eq("room_id", id).order("joined_at"),
       db.from("members").select("id, display_name"),
     ]);
@@ -150,6 +154,10 @@ export function BigScreen() {
   const host = people.find((p) => p.id === room?.host_member_id);
   const open = !!room?.join_code && !room?.locked_at;
 
+  if (room?.current_game === "mr-white" && room.phase !== "lobby") {
+    return <MrWhiteTv phase={room.phase} state={room.state ?? {}} people={people} />;
+  }
+
   return (
     <main className="flex flex-1 flex-col gap-10 px-[5vw] py-[4vh]">
       <header className="flex items-center justify-between">
@@ -188,6 +196,100 @@ export function BigScreen() {
       </section>
 
       <p className="mt-auto text-center text-[clamp(1.2rem,2.4vw,2.4rem)] text-muted">Waiting for the host to pick a game</p>
+    </main>
+  );
+}
+
+function TvFace({ colour, name }: { colour: string; name: string }) {
+  const size = "clamp(5rem,10vw,10rem)";
+  return (
+    <span className="flex items-center justify-center rounded-full font-display font-bold text-ground" style={{ background: colour, width: size, height: size, fontSize: `calc(${size} / 2.2)` }}>
+      {initial(name)}
+    </span>
+  );
+}
+
+/** Mr White on the TV: only what everyone may see. Words and votes appear only at the end. */
+function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePublic; people: Person[] }) {
+  const order = state.order ?? [];
+  const colour = (id?: string) => avatarColour(Math.max(0, people.findIndex((p) => p.id === id)));
+  const name = (id?: string) => people.find((p) => p.id === id)?.name ?? "Someone";
+  const headline = "font-display text-[clamp(2.5rem,7vw,7rem)] font-bold leading-none";
+  const sub = "text-[clamp(1.2rem,2.6vw,2.6rem)] text-muted";
+  const face = (id?: string) => <TvFace colour={colour(id)} name={name(id)} />;
+
+  let body: React.ReactNode = null;
+  if (phase === "reveal") {
+    body = (
+      <>
+        <h1 className={headline}>Check your secret word</h1>
+        <p className={sub}>Keep your phone hidden. {(state.seen ?? []).length} of {order.length} have looked.</p>
+      </>
+    );
+  } else if (phase === "clues") {
+    const turn = state.turn ?? 0;
+    const speaker = order[turn];
+    body = (
+      <>
+        {face(speaker)}
+        <h1 className={headline}>{name(speaker)}&apos;s turn</h1>
+        <p className={sub}>Say one word that fits the secret word</p>
+        <ol className="flex flex-wrap justify-center gap-3">
+          {order.map((id, i) => (
+            <li key={id} className={`rounded-full px-5 py-2 text-[clamp(1rem,1.8vw,1.8rem)] font-bold ${i === turn ? "bg-go text-ground" : i < turn ? "text-muted line-through" : "bg-surface"}`}>
+              {name(id)}
+            </li>
+          ))}
+        </ol>
+      </>
+    );
+  } else if (phase === "between") {
+    body = (
+      <>
+        <h1 className={headline}>Round {state.rounds ?? 1} done</h1>
+        <p className={sub}>Another round of clues, or time to vote?</p>
+      </>
+    );
+  } else if (phase === "vote") {
+    body = (
+      <>
+        <h1 className={headline}>{state.runoff ? "A tie! Vote again" : "Who is Mr White?"}</h1>
+        <p className={sub}>Vote on your phone. {(state.voted ?? []).length} of {order.length} have voted.</p>
+      </>
+    );
+  } else if (phase === "guess") {
+    body = (
+      <>
+        {face(state.picked)}
+        <h1 className={headline}>{name(state.picked)} is Mr White!</h1>
+        <p className={sub}>One guess at the secret word to steal the win...</p>
+      </>
+    );
+  } else if (phase === "results" && state.reveal) {
+    const r = state.reveal;
+    const won = r.outcome.winner === "mr_white";
+    body = (
+      <>
+        <h1 className={`${headline} text-go`}>{won ? "Mr White wins!" : "Mr White is caught!"}</h1>
+        <div className="flex items-center gap-[3vw]">
+          {face(r.mrWhite)}
+          <div className="flex flex-col text-left">
+            <span className={sub}>Mr White was</span>
+            <span className="font-display text-[clamp(2rem,5vw,5rem)] font-bold">{name(r.mrWhite)}</span>
+          </div>
+        </div>
+        <p className="text-[clamp(1.5rem,3.5vw,3.5rem)]">
+          The word was <span className="font-display font-bold text-go">{r.word}</span>
+        </p>
+        {r.outcome.guess && <p className={sub}>Mr White guessed &ldquo;{r.outcome.guess}&rdquo;</p>}
+      </>
+    );
+  }
+
+  return (
+    <main className="flex flex-1 flex-col items-center justify-center gap-[4vh] px-[5vw] py-[4vh] text-center">
+      <div className="font-display text-[clamp(1.5rem,3vw,3rem)] font-bold text-go">Mr White</div>
+      {body}
     </main>
   );
 }

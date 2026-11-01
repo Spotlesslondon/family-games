@@ -17,6 +17,7 @@ import {
   type ClientSession,
 } from "@/lib/client/session";
 import { Reconnect } from "@/app/(app)/reconnect";
+import { MrWhitePlay, MrWhiteResults, type MrWhiteMine, type MrWhitePublic } from "./mr-white-play";
 
 interface RoomRow {
   id: string;
@@ -26,6 +27,8 @@ interface RoomRow {
   host_member_id: string;
   status: "open" | "closed";
   phase: string;
+  current_game: string | null;
+  state: Record<string, unknown>;
 }
 
 /** Why a phone that joined by link is no longer in the night. */
@@ -73,6 +76,10 @@ export function Lobby() {
   const [ended, setEnded] = useState<Ended | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // This phone's own secret for the game running (its word, its vote). Only
+  // ever this player's row: the database rules allow nothing else (0004).
+  const [mine, setMine] = useState<Record<string, unknown>>({});
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   // Every action asks the session store for a current token, so a game night
   // longer than the one-hour token keeps working.
@@ -93,11 +100,13 @@ export function Lobby() {
   const reload = useCallback(async () => {
     const db = dbRef.current;
     if (!db) return;
-    const [{ data: r }, { data: inRoom }, { data: people }] = await Promise.all([
-      db.from("rooms").select("id, code, join_code, locked_at, host_member_id, status, phase").eq("id", id).maybeSingle(),
+    const [{ data: r }, { data: inRoom }, { data: people }, { data: secret }] = await Promise.all([
+      db.from("rooms").select("id, code, join_code, locked_at, host_member_id, status, phase, current_game, state").eq("id", id).maybeSingle(),
       db.from("room_members").select("member_id, connected, joined_at").eq("room_id", id).order("joined_at"),
       db.from("members").select("id, display_name").order("created_at"),
+      db.from("room_private").select("state").eq("room_id", id).maybeSingle(),
     ]);
+    setMine(((secret?.state as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>);
     if (!r) {
       // A phone that joined by link reads nothing once its seat ends (0012).
       if (wasSeatIn(id)) {
@@ -181,6 +190,7 @@ export function Lobby() {
       .channel(`room-${id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `id=eq.${id}` }, () => reload())
       .on("postgres_changes", { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${id}` }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "room_private", filter: `room_id=eq.${id}` }, () => reload())
       // On every (re)subscribe, read the room again: changes made while the
       // connection was down are not replayed.
       .subscribe((status) => {
@@ -293,6 +303,51 @@ export function Lobby() {
 
   const isHost = room.host_member_id === session.member.id;
   const here = seats.length; // everyone in the room; anyone away is marked on their avatar
+  const connectedCount = seats.filter((s) => s.connected).length;
+  const people = new Map(seats.map((s) => [s.id, { id: s.id, name: s.name, colour: s.colour }]));
+
+  // A game is running, or has just finished: the game's own screens take over.
+  if (room.current_game === "mr-white" && room.phase !== "lobby") {
+    const hostEnd = isHost && room.phase !== "results" && (
+      <button
+        type="button"
+        onClick={() => {
+          // A second tap ends it, so a slip mid-game does nothing.
+          if (!confirmEnd) {
+            setConfirmEnd(true);
+            return;
+          }
+          setConfirmEnd(false);
+          act("end_game");
+        }}
+        className={`h-10 rounded-full px-4 text-sm font-bold ${confirmEnd ? "bg-alert text-ground" : "border-2 border-line text-muted"}`}
+      >
+        {confirmEnd ? "Tap to end the game" : "End this game"}
+      </button>
+    );
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
+        <div className="flex items-center justify-between">
+          <h1 className="font-display text-2xl font-semibold text-go">Mr White</h1>
+          {hostEnd}
+        </div>
+        {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
+        {room.phase === "results" ? (
+          <MrWhiteResults state={room.state as MrWhitePublic} me={session.member.id} hostId={room.host_member_id} people={people} act={act} />
+        ) : (
+          <MrWhitePlay
+            phase={room.phase}
+            state={room.state as MrWhitePublic}
+            mine={mine as MrWhiteMine}
+            me={session.member.id}
+            hostId={room.host_member_id}
+            people={people}
+            act={act}
+          />
+        )}
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-12">
@@ -371,12 +426,22 @@ export function Lobby() {
                 Everyone is in: lock the room
               </button>
             )}
-            <button type="button" disabled className="h-15 rounded-full border-2 border-line font-display text-xl font-bold opacity-60">Games arrive next: Mr White</button>
+            <button
+              type="button"
+              disabled={connectedCount < 3}
+              onClick={async () => {
+                const out = await act("start_game", { gameId: "mr-white" });
+                if (out && out.ok === false) setActionError(message(out.reason));
+              }}
+              className="h-15 rounded-full border-2 border-go font-display text-xl font-bold text-go disabled:border-line disabled:text-muted disabled:opacity-60"
+            >
+              {connectedCount < 3 ? "Mr White needs 3 players" : "Play Mr White"}
+            </button>
             <button type="button" onClick={closeRoom} className="h-13 rounded-full border-2 border-line font-bold">End game night</button>
           </>
         ) : (
           <>
-            <p className="text-center text-muted">Waiting for the host to pick a game</p>
+            <p className="text-center text-muted">Waiting for the host to start a game</p>
             <button type="button" onClick={leave} className="h-13 rounded-full border-2 border-line font-bold">Leave the room</button>
           </>
         )}
