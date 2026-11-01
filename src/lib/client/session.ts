@@ -11,10 +11,27 @@ export interface ClientSession {
   member: { id: string; name: string; role: string; familyId: string };
 }
 
+// Kept in memory for the life of the open page, so moving between screens does
+// not trade the refresh cookie again. A full reload starts empty.
+let current: ClientSession | null = null;
+
+/** The signed-in member's session. Reuses the one in memory while it has more than a minute left. */
 export async function loadSession(): Promise<ClientSession | null> {
+  if (current && current.expiresAt !== null && current.expiresAt * 1000 - Date.now() > 60_000) {
+    return current;
+  }
   const res = await fetch("/api/auth/session", { method: "POST" });
-  if (!res.ok) return null;
-  return (await res.json()) as ClientSession;
+  if (!res.ok) {
+    current = null;
+    return null;
+  }
+  current = (await res.json()) as ClientSession;
+  return current;
+}
+
+/** Drop the in-memory session. Call on sign-in and sign-out so a shared phone never shows the last person. */
+export function forgetSession(): void {
+  current = null;
 }
 
 /** A Supabase client that reads as the signed-in member, through row level security. */

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { avatarColour, initial, loadSession, memberClient, message, type ClientSession } from "@/lib/client/session";
+import { avatarColour, forgetSession, initial, loadSession, memberClient, message, type ClientSession } from "@/lib/client/session";
 
 interface Row {
   id: string;
@@ -105,6 +105,7 @@ export default function Home() {
   }
 
   async function signOut() {
+    forgetSession();
     await fetch("/api/auth/signout", { method: "POST" });
     router.replace("/");
   }

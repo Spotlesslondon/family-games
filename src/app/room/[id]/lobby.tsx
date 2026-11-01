@@ -85,6 +85,9 @@ export function Lobby() {
     const db = dbRef.current;
     if (!session || !db) return;
     let alive = true;
+    // Show the room as soon as it can be read; the join runs alongside and the
+    // screen catches up when it lands (Realtime, plus the reload below).
+    reload();
     act("join").then(() => {
       if (alive) reload();
     });

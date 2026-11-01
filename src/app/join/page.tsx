@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { avatarColour, initial, message } from "@/lib/client/session";
+import { avatarColour, forgetSession, initial, message } from "@/lib/client/session";
 
 interface Member {
   id: string;
@@ -53,6 +53,7 @@ export default function Join() {
       setError(message(body.error, body));
       return;
     }
+    forgetSession();
     router.push("/home");
   }
 

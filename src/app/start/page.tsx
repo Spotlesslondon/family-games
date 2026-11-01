@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { message } from "@/lib/client/session";
+import { forgetSession, message } from "@/lib/client/session";
 
 const field = "h-14 rounded-2xl border-2 border-surface-2 bg-surface px-4 text-lg text-ink outline-none focus:border-go";
 
@@ -35,6 +35,7 @@ export default function StartFamily() {
       setError(message(body.error));
       return;
     }
+    forgetSession();
     router.push("/home");
   }
 
