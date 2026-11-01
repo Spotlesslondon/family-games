@@ -50,6 +50,12 @@ export function BigScreen() {
       setState("over");
       return;
     }
+    // An open night always has its host in it. Seeing nobody means this TV's
+    // access has ended (for example the device became a player instead).
+    if (!inRoom || inRoom.length === 0) {
+      setState("gone");
+      return;
+    }
     const byId = new Map((names ?? []).map((m) => [m.id as string, m.display_name as string]));
     setRoom(r as RoomRow);
     setPeople(

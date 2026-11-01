@@ -205,6 +205,18 @@ export async function claimSeat(
     throw err;
   }
 
+  // A device that was showing a night on the TV and now taps a name becomes a
+  // player: it stops being the TV, so it is never both at once.
+  const { error: screenEnd } = await db
+    .from("screen_sessions")
+    .update({ expires_at: new Date().toISOString() })
+    .eq("auth_user_id", anon.userId)
+    .gt("expires_at", new Date().toISOString());
+  if (screenEnd) {
+    await undoGuest();
+    throw new AuthError("server_busy", 503, { reason: screenEnd.message });
+  }
+
   // Already sitting in this room on this phone (a second tap, or a reload).
   const { data: mine } = await db
     .from("seats")
