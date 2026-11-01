@@ -163,6 +163,21 @@ begin
   select count(*) into n from rooms where family_id = 'e0000000-0000-0000-0000-000000000001';
   if n <> 1 then raise exception 'a phone deleted rooms'; end if;
 
+  -- 7. Every link between tables has an index that covers it, so deleting a
+  --    family or a person never scans a whole history table.
+  for t in
+    select c.conrelid::regclass::text || ' ' || c.conname
+      from pg_constraint c
+     where c.contype = 'f' and c.connamespace = 'public'::regnamespace
+       and not exists (
+         select 1 from pg_index i
+          where i.indrelid = c.conrelid
+            and (i.indkey::int2[])[0:array_length(c.conkey,1)-1] @> c.conkey
+            and (i.indkey::int2[])[0:array_length(c.conkey,1)-1] <@ c.conkey)
+  loop
+    raise exception 'link without an index: %', t;
+  end loop;
+
   -- 6. Every table has row level security switched on.
   for t in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
             where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity loop
