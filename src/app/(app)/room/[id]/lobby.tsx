@@ -130,7 +130,6 @@ export function Lobby() {
       endSeatSession();
       return;
     }
-    const order = (people ?? []).map((p) => p.id as string);
     const names = new Map((people ?? []).map((p) => [p.id as string, p.display_name as string]));
     setRoom(r as RoomRow);
     setSeats(
@@ -138,7 +137,7 @@ export function Lobby() {
         id: m.member_id as string,
         name: names.get(m.member_id as string) ?? "Someone",
         connected: m.connected as boolean,
-        colour: avatarColour(Math.max(0, order.indexOf(m.member_id as string))),
+        colour: avatarColour(m.member_id as string),
       }))
     );
   }, [id]);

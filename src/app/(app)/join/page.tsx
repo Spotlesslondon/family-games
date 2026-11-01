@@ -119,14 +119,14 @@ export default function Join() {
         </div>
         <h1 className="font-display text-4xl font-semibold leading-tight">Who is playing?</h1>
         <div className="grid grid-cols-2 gap-4">
-          {members.map((m, i) => (
+          {members.map((m) => (
             <button
               key={m.id}
               type="button"
-              onClick={() => setChosen({ member: m, colour: avatarColour(i) })}
+              onClick={() => setChosen({ member: m, colour: avatarColour(m.id) })}
               className="flex flex-col items-center gap-3 rounded-3xl border-2 border-surface-2 bg-surface px-3 py-5"
             >
-              <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ground" style={{ background: avatarColour(i) }}>
+              <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ground" style={{ background: avatarColour(m.id) }}>
                 {initial(m.name)}
               </span>
               <span className="text-lg font-bold">{m.name}</span>

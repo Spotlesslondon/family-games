@@ -190,6 +190,16 @@ describe("Mr White: the vote", () => {
     expect(t.s.reveal?.mrWhite).toBe(t.mr);
   });
 
+  it("records every vote, including the last one that triggers the count (found at the first full play)", () => {
+    const t = toVote(6);
+    const innocent = t.ids().find((id) => id !== t.mr)!;
+    for (const id of t.ids()) t.act(id, "vote", { memberId: id === t.mr ? innocent : t.mr });
+    expect(t.room.phase).toBe("guess");
+    for (const id of t.ids()) expect(typeof t.priv[id].vote).toBe("string");
+    t.act(t.mr, "guess", { word: "nope" });
+    expect(Object.keys(t.s.reveal?.votes ?? {}).sort()).toEqual(t.ids().sort());
+  });
+
   it("caught Mr White guesses wrong: everyone else wins", () => {
     const t = toVote(6);
     t.everyoneVotes(t.mr);

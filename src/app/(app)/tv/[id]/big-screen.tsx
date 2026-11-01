@@ -178,11 +178,11 @@ export function BigScreen() {
       <section className="flex flex-col gap-6">
         <h2 className="text-[clamp(1rem,1.6vw,1.6rem)] font-bold tracking-widest text-muted">IN THE ROOM · {people.length}</h2>
         <ul className="flex flex-wrap gap-[3vw]">
-          {people.map((p, i) => (
+          {people.map((p) => (
             <li key={p.id} className="flex flex-col items-center gap-3">
               <span
                 className={`flex h-[clamp(5rem,9vw,9rem)] w-[clamp(5rem,9vw,9rem)] items-center justify-center rounded-full font-display text-[clamp(2.2rem,4vw,4rem)] font-bold ${p.connected ? "text-ground" : "border-4 border-dashed bg-surface-2"}`}
-                style={p.connected ? { background: avatarColour(i) } : { borderColor: avatarColour(i), color: avatarColour(i) }}
+                style={p.connected ? { background: avatarColour(p.id) } : { borderColor: avatarColour(p.id), color: avatarColour(p.id) }}
               >
                 {initial(p.name)}
               </span>
@@ -212,7 +212,7 @@ function TvFace({ colour, name }: { colour: string; name: string }) {
 /** Mr White on the TV: only what everyone may see. Words and votes appear only at the end. */
 function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePublic; people: Person[] }) {
   const order = state.order ?? [];
-  const colour = (id?: string) => avatarColour(Math.max(0, people.findIndex((p) => p.id === id)));
+  const colour = (id?: string) => avatarColour(id ?? "");
   const name = (id?: string) => people.find((p) => p.id === id)?.name ?? "Someone";
   const headline = "font-display text-[clamp(2.5rem,7vw,7rem)] font-bold leading-none";
   const sub = "text-[clamp(1.2rem,2.6vw,2.6rem)] text-muted";

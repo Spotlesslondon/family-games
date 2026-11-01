@@ -236,9 +236,9 @@ export default function Home() {
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-bold tracking-widest text-muted">IN THE FAMILY · {rows.length}</h2>
         <ul className="flex flex-col gap-2">
-          {rows.map((r, i) => (
+          {rows.map((r) => (
             <li key={r.id} className="flex items-center gap-3 rounded-2xl bg-surface px-4 py-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full font-display font-bold text-ground" style={{ background: avatarColour(i) }}>
+              <span className="flex h-10 w-10 items-center justify-center rounded-full font-display font-bold text-ground" style={{ background: avatarColour(r.id) }}>
                 {initial(r.display_name)}
               </span>
               <span className="flex-1 text-lg font-bold">{r.display_name}</span>

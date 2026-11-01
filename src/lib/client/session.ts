@@ -113,8 +113,14 @@ export async function postAsMember(path: string, body: unknown, init?: { keepali
 
 export const AVATAR_COLOURS = ["#FFC93C", "#8FA8FF", "#6FD3B7", "#FF7A66", "#E3A6F2"];
 
-export function avatarColour(index: number): string {
-  return AVATAR_COLOURS[index % AVATAR_COLOURS.length];
+/**
+ * A person's colour, worked out from their id, so it is the same on every
+ * phone and on the TV whatever order each screen lists people in.
+ */
+export function avatarColour(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_COLOURS[h % AVATAR_COLOURS.length];
 }
 
 export function initial(name: string): string {

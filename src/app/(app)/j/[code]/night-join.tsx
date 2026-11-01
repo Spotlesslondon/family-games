@@ -205,7 +205,7 @@ export function NightJoin() {
       <p role="alert" aria-live="polite" className="-my-2 min-h-6 font-bold text-alert">{error ?? ""}</p>
       {night.people.length > 0 && (
         <div className="grid grid-cols-2 gap-4">
-          {night.people.map((p, i) => (
+          {night.people.map((p) => (
             <button
               key={p.id}
               type="button"
@@ -213,7 +213,7 @@ export function NightJoin() {
               onClick={() => claim({ memberId: p.id })}
               className="flex flex-col items-center gap-3 rounded-3xl border-2 border-surface-2 bg-surface px-3 py-5 disabled:opacity-50"
             >
-              <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ground" style={{ background: avatarColour(i) }}>
+              <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ground" style={{ background: avatarColour(p.id) }}>
                 {initial(p.name)}
               </span>
               <span className="text-lg font-bold">{p.name}</span>

@@ -227,7 +227,11 @@ export const mrWhite: GameModule = {
         // A tied player in a run-off still votes, for the other tied player.
         const next: MrWhiteState = { ...s, voted };
         if (voted.length < ids(ctx).length) return accept({ state: next, private: priv });
-        return tally({ ...ctx, private: { ...ctx.private, ...priv } }, next);
+        // The last vote both counts and must be saved: keep it in the write
+        // unless the count itself rewrote that player's private state (run-off).
+        const counted = tally({ ...ctx, private: { ...ctx.private, ...priv } }, next);
+        if (!counted.ok || counted.noop) return counted;
+        return accept({ ...counted.write, private: { ...priv, ...(counted.write.private ?? {}) } });
       }
 
       case "count_votes": {
