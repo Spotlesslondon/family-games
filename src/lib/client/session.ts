@@ -149,6 +149,12 @@ const MESSAGES: Record<string, string> = {
   cannot_remove_self: "The host cannot remove themselves.",
   seat_ended: "You are no longer in this game night.",
   phone_session_needed: "Could not set up this phone. Try again.",
+  invalid_list_name: "Give the list a name, up to 40 letters.",
+  list_name_taken: "You already have a list with that name.",
+  too_many_lists: "That is the most lists you can keep. Delete one first.",
+  list_full: "That list is full (30 people).",
+  list_not_found: "That list has gone. It may have been deleted on another phone.",
+  person_not_found: "That person has gone. They may have been removed on another phone.",
 };
 
 export function message(code: string | undefined, extra?: { attemptsLeft?: number }): string {
