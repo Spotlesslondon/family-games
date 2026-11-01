@@ -10,8 +10,9 @@
 //     How many are hidden: 3 to 4 players, 1; 5 to 6, 2; 7 to 10, 3; 11 to
 //     12, 4. Mr White, when in, is one of them; the rest are Wolves.
 //  3. Clues are typed by default: in turn, each player types one word that
-//     fits their word, and every phone and the TV shows it at once. Not their
-//     own word, nothing anyone has already said. Mr White never goes first.
+//     fits their word, and every phone and the TV shows it at once. Neither
+//     secret word (not their own, not the other side's), nothing anyone has
+//     already said. Mr White never goes first.
 //     The host can choose "Say clues out loud" instead, for tables with
 //     children who cannot type yet: then the app only shows whose turn it is.
 //  4. After a round of clues the host chooses another round or the vote. In
@@ -338,8 +339,11 @@ export const mrWhite: GameModule = {
         if (!text || !norm(text)) return reject("empty_clue");
         if (text.length > MAX_CLUE) return reject("clue_too_long");
         if (/\s/.test(text)) return reject("one_word_only");
-        const word = ctx.private[actor]?.word;
-        if (typeof word === "string" && tooClose(text, word)) return reject("clue_is_your_word");
+        // Neither secret word may be typed by anyone: not your own, and not the
+        // other side's (a Wolf or Mr White typing the Villagers' word would show
+        // it to everyone). One message for both, so a refusal never says which.
+        const { villagerWord, wolfWord } = secrets(ctx, s);
+        if ([villagerWord, wolfWord].some((w) => w && tooClose(text, w))) return reject("clue_not_allowed");
         if (s.clues.some((c) => c.text && sameWord(c.text, text))) return reject("clue_already_said");
         return nextTurn(s, [...s.clues, { id: actor, round: s.round, text }]);
       }

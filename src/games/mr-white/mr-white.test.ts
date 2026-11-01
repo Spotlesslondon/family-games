@@ -198,7 +198,7 @@ describe("Mr White: typed clues", () => {
     expect(t.act(first, "clue", { turn: 0, text: "a".repeat(21) })).toEqual({ ok: false, reason: "clue_too_long" });
     const own = t.priv[first].word as string;
     const ownClue = own.includes(" ") ? own.split(" ")[1] + "s" : own.toUpperCase() + "S";
-    expect(t.act(first, "clue", { turn: 0, text: ownClue })).toEqual({ ok: false, reason: "clue_is_your_word" });
+    expect(t.act(first, "clue", { turn: 0, text: ownClue })).toEqual({ ok: false, reason: "clue_not_allowed" });
     expect(t.act(first, "clue", { turn: 0, text: "Splash" }).ok).toBe(true);
     expect(t.s.clues).toEqual([{ id: first, round: 1, text: "Splash" }]);
     expect(t.s.turn).toBe(1);
@@ -208,6 +208,25 @@ describe("Mr White: typed clues", () => {
     expect(t.act(second, "clue", { turn: 1, text: "splashes" })).toEqual({ ok: false, reason: "clue_already_said" });
     // Typed mode: tapping "said it" is not a clue.
     expect(t.act(second, "clue_done", { turn: 1 })).toEqual({ ok: false, reason: "type_your_clue" });
+  });
+
+  it("refuses either secret word from anyone, Mr White included, with the same message", () => {
+    for (let seed = 1; seed <= 15; seed++) {
+      const t = new Table(seed, 5); // 3 Villagers, 1 Wolf, Mr White
+      t.start();
+      t.allSee();
+      const villagerWord = t.villagerWord();
+      const wolfWord = t.priv[t.of("wolf")[0]].word as string;
+      // Whoever's turn it is, Villager, Wolf or Mr White, neither word goes through.
+      for (let k = 0; k < 5; k++) {
+        const id = t.stillIn()[t.s.turn];
+        for (const w of [villagerWord, wolfWord]) {
+          expect(t.act(id, "clue", { turn: t.s.turn, text: w.split(" ").pop()!.toUpperCase() + "S" })).toEqual({ ok: false, reason: "clue_not_allowed" });
+        }
+        expect(t.act(id, "clue", { turn: t.s.turn, text: `ok${k}` }).ok).toBe(true);
+      }
+      expect(JSON.stringify(t.s.clues)).not.toMatch(new RegExp(villagerWord.split(" ").pop()!, "i"));
+    }
   });
 
   it("lets the host move a stuck turn on, leaving a gap in the clues", () => {
