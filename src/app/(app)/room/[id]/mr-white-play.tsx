@@ -49,8 +49,8 @@ export interface MrWhiteMine {
 type Act = (type: string, payload?: Record<string, unknown>) => Promise<{ ok?: boolean; reason?: string } | null>;
 
 const big = "font-display text-3xl font-semibold leading-tight";
-const primary = "btn btn-primary h-16 w-full font-display text-2xl";
-const secondary = "btn btn-secondary h-14 w-full font-display text-xl";
+const primary = "btn btn-primary h-16 w-full font-display text-2xl disabled:opacity-60";
+const secondary = "btn btn-secondary h-14 w-full font-display text-xl disabled:opacity-60";
 
 export const SIDE_NAME: Record<Side, string> = { villager: "a Villager", wolf: "a Wolf", mr_white: "Mr White" };
 
@@ -365,7 +365,7 @@ export function MrWhitePlay({
         {err}
         {isHost && (
           <div className="mt-auto flex flex-col gap-3">
-            <button type="button" disabled={busy} onClick={() => send("start_vote")} className={primary}>Vote now</button>
+            <button type="button" disabled={busy} onClick={() => send("start_vote")} className={primary}>{busy ? "Starting the vote" : "Vote now"}</button>
             <button type="button" disabled={busy} onClick={() => send("another_round")} className={secondary}>Another round of clues</button>
           </div>
         )}

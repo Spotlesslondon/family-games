@@ -87,6 +87,7 @@ export function Lobby() {
   // ever this player's row: the database rules allow nothing else (0004).
   const [mine, setMine] = useState<Record<string, unknown>>({});
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const reloadRef = useRef<(() => void) | null>(null);
   const [confirmLock, setConfirmLock] = useState(false);
   const [picking, setPicking] = useState(false);
   // An armed "Lock the room" disarms itself after a few seconds.
@@ -111,7 +112,12 @@ export function Lobby() {
         return null;
       }
       setActionError(null);
-      return res.json().catch(() => ({}));
+      const out = await res.json().catch(() => ({}));
+      // Read the new state straight away rather than waiting for Realtime to
+      // say it changed: the tapping phone moves on at once (2 Nov, "Vote now
+      // button has a big delay"). Realtime still updates everyone else.
+      if (out && out.ok !== false) reloadRef.current?.();
+      return out;
     },
     [id]
   );
@@ -163,6 +169,10 @@ export function Lobby() {
       }))
     );
   }, [id]);
+
+  useEffect(() => {
+    reloadRef.current = () => void reload();
+  }, [reload]);
 
   useEffect(() => {
     let cancelled = false;
