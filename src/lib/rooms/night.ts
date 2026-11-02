@@ -11,6 +11,7 @@ import { serviceClient } from "@/lib/supabase/server";
 import { cleanName } from "@/lib/auth/crypto";
 import { AuthError, caller, refresh, type Session } from "@/lib/auth/service";
 import { actAs, closeIdle, isIdle, joinCode } from "./service";
+import { isAvatarKey, mayTake, type AvatarKey } from "@/lib/avatars";
 
 export const AGE_BANDS = ["6-8", "9-11", "12-15", "16+"] as const;
 type AgeBand = (typeof AGE_BANDS)[number];
@@ -53,6 +54,8 @@ export interface NightPerson {
   id: string;
   name: string;
   taken: boolean;
+  /** Their saved character, so a child can find themselves by picture. */
+  avatar: AvatarKey | null;
 }
 
 /** Who can be picked tonight: the night's list, or else the family's regular people. */
@@ -63,7 +66,7 @@ async function peopleFor(night: NightRow): Promise<NightPerson[]> {
     const { data } = await db.from("list_people").select("member_id").eq("list_id", night.list_id);
     ids = (data ?? []).map((r) => r.member_id as string);
   }
-  let query = db.from("members").select("id, display_name, is_guest").eq("family_id", night.family_id).order("created_at");
+  let query = db.from("members").select("id, display_name, is_guest, avatar").eq("family_id", night.family_id).order("created_at");
   if (ids) query = query.in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
   else query = query.eq("is_guest", false);
   const [{ data: people }, { data: inRoom }] = await Promise.all([
@@ -73,7 +76,7 @@ async function peopleFor(night: NightRow): Promise<NightPerson[]> {
   const taken = new Set((inRoom ?? []).map((r) => r.member_id as string));
   return (people ?? [])
     .filter((p) => p.id !== night.host_member_id)
-    .map((p) => ({ id: p.id as string, name: p.display_name as string, taken: taken.has(p.id as string) }));
+    .map((p) => ({ id: p.id as string, name: p.display_name as string, taken: taken.has(p.id as string), avatar: isAvatarKey(p.avatar) ? p.avatar : null }));
 }
 
 /** What a phone sees when it opens the link. First names only, nothing else about anyone. */
@@ -345,4 +348,29 @@ export async function claimScreen(rawCode: unknown, body: Record<string, unknown
   // A fresh token now carries the screen claims, so the TV can read the room.
   const watching = await refresh(anon.refreshToken);
   return { ...watching, screen: { roomId: night.id, familyId: night.family_id } };
+}
+
+/**
+ * A person in the room picks their character, in the lobby only (they can
+ * change it until a game starts). It is saved on the person, so someone on
+ * the host's lists keeps it from night to night.
+ */
+export async function setAvatar(accessToken: string, roomId: unknown, avatar: unknown): Promise<{ avatar: AvatarKey }> {
+  if (typeof roomId !== "string" || !isAvatarKey(avatar)) throw new AuthError("invalid_request", 400);
+  const who = await caller(accessToken);
+  if (who.kind === "screen") throw new AuthError("screens_only_watch", 403);
+  if (who.kind === "seat" && who.roomId !== roomId) throw new AuthError("room_not_found", 404);
+  const db = serviceClient();
+  const { data: room } = await db.from("rooms").select("id, family_id, status, phase").eq("id", roomId).maybeSingle();
+  if (!room || room.family_id !== who.family_id || room.status !== "open") throw new AuthError("room_not_found", 404);
+  if (room.phase !== "lobby") throw new AuthError("game_in_progress", 409);
+  const { data: inRoom } = await db.from("room_members").select("member_id").eq("room_id", roomId);
+  const ids = (inRoom ?? []).map((m) => m.member_id as string);
+  if (!ids.includes(who.id)) throw new AuthError("not_in_room", 403);
+  const others = ids.filter((m) => m !== who.id);
+  const { data: theirs } = others.length ? await db.from("members").select("avatar").in("id", others) : { data: [] };
+  if (!mayTake(avatar, (theirs ?? []).map((m) => m.avatar as string))) throw new AuthError("avatar_taken", 409);
+  const { error } = await db.from("members").update({ avatar }).eq("id", who.id);
+  if (error) throw new AuthError("server_busy", 503, { reason: error.message });
+  return { avatar };
 }

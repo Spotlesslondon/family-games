@@ -7,11 +7,14 @@
 
 import { useState } from "react";
 import { initial, message } from "@/lib/client/session";
+import { PlayerAvatar } from "@/components/avatars";
+import type { AvatarKey } from "@/lib/avatars";
 
 export interface Person {
   id: string;
   name: string;
   colour: string;
+  avatar?: AvatarKey | null;
 }
 
 type Side = "villager" | "wolf" | "mr_white";
@@ -46,8 +49,8 @@ export interface MrWhiteMine {
 type Act = (type: string, payload?: Record<string, unknown>) => Promise<{ ok?: boolean; reason?: string } | null>;
 
 const big = "font-display text-3xl font-semibold leading-tight";
-const primary = "h-16 w-full rounded-full bg-go font-display text-2xl font-bold text-ground disabled:opacity-60";
-const secondary = "h-14 w-full rounded-full border-2 border-line font-display text-xl font-bold disabled:opacity-60";
+const primary = "btn btn-primary h-16 w-full font-display text-2xl";
+const secondary = "btn btn-secondary h-14 w-full font-display text-xl";
 
 export const SIDE_NAME: Record<Side, string> = { villager: "a Villager", wolf: "a Wolf", mr_white: "Mr White" };
 
@@ -92,13 +95,30 @@ export function stillIn(state: MrWhitePublic): string[] {
   return (state.order ?? []).filter((id) => !out.has(id));
 }
 
+/** A player's character, or their initial in a circle if they have not picked one. */
 function Avatar({ p, size = "h-14 w-14 text-2xl", faded = false }: { p?: Person; size?: string; faded?: boolean }) {
+  if (p?.avatar) {
+    // The character is a little taller than wide: keep the size's height, let the width follow.
+    const height = size.split(" ").find((c) => c.startsWith("h-")) ?? "h-14";
+    return <PlayerAvatar avatar={p.avatar} className={`${height} w-auto shrink-0 ${faded ? "opacity-40" : ""}`} label={p.name} />;
+  }
   return (
     <span
-      className={`flex shrink-0 items-center justify-center rounded-full font-display font-bold text-ground ${size} ${faded ? "opacity-40" : ""}`}
-      style={{ background: p?.colour ?? "#A9B0CC" }}
+      className={`flex shrink-0 items-center justify-center rounded-full border-[3px] border-ink font-display text-ink ${size} ${faded ? "opacity-40" : ""}`}
+      style={{ background: p?.colour ?? "#F6E3B4" }}
     >
       {initial(p?.name ?? "?")}
+    </span>
+  );
+}
+
+/** The selected mark: a tick in a blue badge, so a choice never relies on colour alone. */
+function Tick() {
+  return (
+    <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border-[3px] border-ink bg-pick" aria-hidden="true">
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 12.5 L10 17.5 L19 7" />
+      </svg>
     </span>
   );
 }
@@ -111,11 +131,11 @@ function MySecret({ mine }: { mine: MrWhiteMine }) {
     <button
       type="button"
       onClick={() => setShown((v) => !v)}
-      className="flex min-h-12 items-center justify-between rounded-2xl bg-surface px-4 text-left"
+      className="card flex min-h-12 items-center justify-between px-4 text-left"
       aria-label={shown ? "Hide my secret" : "Show my secret"}
     >
       <span className="text-sm font-bold tracking-widest text-muted">{mine.mrWhite ? "YOU ARE" : "YOUR WORD"}</span>
-      <span className="font-display text-xl font-bold text-go">{shown ? (mine.mrWhite ? "Mr White" : mine.word) : "Tap to see"}</span>
+      <span className="font-display text-xl font-bold text-ink">{shown ? (mine.mrWhite ? "Mr White" : mine.word) : "Tap to see"}</span>
     </button>
   );
 }
@@ -132,7 +152,7 @@ function ClueBoard({ state, people, me, current }: { state: MrWhitePublic; peopl
         const theirs = clues.filter((c) => c.id === id);
         const side = outSide.get(id);
         return (
-          <li key={id} className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${id === current ? "bg-surface-2 ring-2 ring-go" : "bg-surface"}`}>
+          <li key={id} className={`flex items-center gap-3 rounded-md border-[3px] border-ink px-3 py-2 ${id === current ? "bg-go" : "bg-surface"}`}>
             <Avatar p={p} size="h-10 w-10 text-lg" faded={!!side} />
             <div className="flex min-w-0 flex-1 flex-col">
               <span className={`text-sm font-bold ${side ? "text-muted" : ""}`}>
@@ -203,7 +223,7 @@ export function MrWhitePlay({
 
   const err = <p role="alert" aria-live="polite" className="min-h-7 text-center font-bold text-alert">{error ?? ""}</p>;
   const outBanner = amOut && (
-    <p className="rounded-2xl bg-surface px-4 py-3 text-center font-bold text-muted">You are out. Watch, and see who wins.</p>
+    <p className="card px-4 py-3 text-center font-bold text-muted">You are out. Watch, and see who wins.</p>
   );
 
   // ---- 1. Everyone looks at their secret ------------------------------------
@@ -214,7 +234,7 @@ export function MrWhitePlay({
       <section className="flex flex-1 flex-col gap-5">
         <h2 className={big}>{done ? "Waiting for everyone to look" : "Look at your secret"}</h2>
         {!done && (
-          <div className="flex flex-col items-center gap-4 rounded-3xl bg-surface px-5 py-8 text-center">
+          <div className="card flex flex-col items-center gap-4 px-5 py-8 text-center">
             {!peek ? (
               <>
                 <p className="text-lg text-muted">Keep your screen hidden from everyone else.</p>
@@ -223,19 +243,19 @@ export function MrWhitePlay({
             ) : mine.mrWhite ? (
               <>
                 <span className="text-sm font-bold tracking-widest text-muted">YOU ARE</span>
-                <span className="font-display text-5xl font-bold text-go">Mr White</span>
+                <span className="font-display text-5xl font-bold text-ink">Mr White</span>
                 <p className="text-lg">You have no word. Read the others&apos; clues and pretend you do.</p>
               </>
             ) : (
               <>
                 <span className="text-sm font-bold tracking-widest text-muted">YOUR SECRET WORD</span>
-                <span className="font-display text-5xl font-bold text-go">{mine.word}</span>
+                <span className="font-display text-5xl font-bold text-ink">{mine.word}</span>
                 <p className="text-lg">A few players have a different word, and nobody knows if it is them. Never say your word.</p>
               </>
             )}
           </div>
         )}
-        <p className="rounded-2xl bg-surface px-4 py-3 text-center text-lg font-bold">{findThemLine(state.settings)}</p>
+        <p className="card px-4 py-3 text-center text-lg font-bold">{findThemLine(state.settings)}</p>
         <p className="text-center text-muted">Hidden this game: {hiddenLine(state.settings)}</p>
         <p className="text-center text-muted">{seen.length} of {everyone.length} have looked</p>
         {err}
@@ -270,7 +290,7 @@ export function MrWhitePlay({
           >
             <p className="text-lg">{mine.mrWhite ? "Type one word that fits the others' clues. Bluff!" : "Type one word that fits your secret word. Not the word itself."}</p>
             <input
-              className="h-16 rounded-2xl border-2 border-surface-2 bg-surface px-4 font-display text-2xl font-bold outline-none focus:border-go"
+              className="card h-16 border-2 border-surface-2 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
               value={clue}
               onChange={(e) => setClue(e.target.value.slice(0, 20))}
               autoCapitalize="none"
@@ -285,7 +305,7 @@ export function MrWhitePlay({
             <button type="submit" disabled={busy || !clue.trim()} className={primary}>Send</button>
           </form>
         ) : spoken ? (
-          <div className="flex flex-col items-center gap-4 rounded-3xl bg-surface px-5 py-7 text-center">
+          <div className="card flex flex-col items-center gap-4 px-5 py-7 text-center">
             <Avatar p={people.get(speaker)} size="h-24 w-24 text-5xl" />
             <p className="text-xl font-bold">
               {myTurn
@@ -300,7 +320,7 @@ export function MrWhitePlay({
         {spoken && (
           <ol className="flex flex-wrap gap-2" aria-label="Order">
             {left.map((id, i) => (
-              <li key={id} className={`rounded-full px-3 py-1.5 text-sm font-bold ${i === turn ? "bg-go text-ground" : i < turn ? "bg-surface-2 text-muted line-through" : "bg-surface"}`}>
+              <li key={id} className={`rounded-full px-3 py-1.5 text-sm font-bold ${i === turn ? "bg-go text-ink" : i < turn ? "bg-surface-2 text-muted line-through" : "bg-surface"}`}>
                 {name(id)}
               </li>
             ))}
@@ -370,8 +390,9 @@ export function MrWhitePlay({
                       const ok = await send("vote", { memberId: id }, true);
                       if (!ok) setPendingVote(null);
                     }}
-                    className={`flex w-full flex-col items-center gap-2 rounded-3xl border-4 px-3 py-4 ${my === id ? "border-go bg-surface-2" : "border-transparent bg-surface"}`}
+                    className={`relative flex w-full flex-col items-center gap-2 rounded-md border-4 bg-surface px-3 py-4 shadow-[4px_4px_0_#111] active:translate-x-1 active:translate-y-1 active:shadow-none ${my === id ? "border-[6px] border-pick" : "border-ink"}`}
                   >
+                    {my === id && <Tick />}
                     <Avatar p={people.get(id)} />
                     <span className="text-lg font-bold">{name(id)}</span>
                   </button>
@@ -407,7 +428,7 @@ export function MrWhitePlay({
           >
             <p className="text-lg">Guess the word most players have, to win on your own. One go.</p>
             <input
-              className="h-16 rounded-2xl border-2 border-surface-2 bg-surface px-4 font-display text-2xl font-bold outline-none focus:border-go"
+              className="card h-16 border-2 border-surface-2 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
               value={guess}
               onChange={(e) => setGuess(e.target.value.slice(0, 40))}
               autoCapitalize="none"
@@ -433,7 +454,7 @@ export function MrWhitePlay({
     return (
       <section className="flex flex-1 flex-col gap-5">
         {gone ? (
-          <div className="flex flex-col items-center gap-3 rounded-3xl bg-surface px-5 py-7 text-center">
+          <div className="card flex flex-col items-center gap-3 px-5 py-7 text-center">
             <Avatar p={people.get(gone.id)} size="h-20 w-20 text-4xl" />
             <h2 className={big}>{wasLine(gone.side, name(gone.id), gone.id === me)}</h2>
             {gone.guess !== undefined && <p className="text-lg">Mr White guessed &ldquo;{gone.guess}&rdquo;. Wrong!</p>}
@@ -502,14 +523,14 @@ export function MrWhiteResults({
   const bySide = (side: Side) => (state.order ?? []).filter((id) => r.sides[id] === side);
   return (
     <section className="flex flex-1 flex-col gap-4">
-      <h2 className="font-display text-4xl font-bold leading-tight text-go">{iWon ? "You win!" : headline}</h2>
+      <h2 className="font-display text-4xl font-bold leading-tight text-ink">{iWon ? "You win!" : headline}</h2>
       <p className="text-lg">{why}</p>
       <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1 rounded-3xl bg-surface px-4 py-4">
+        <div className="card flex flex-col gap-1 px-4 py-4">
           <span className="text-xs font-bold tracking-widest text-muted">VILLAGERS HAD</span>
-          <span className="font-display text-2xl font-bold text-go">{r.villagerWord}</span>
+          <span className="font-display text-2xl font-bold text-ink">{r.villagerWord}</span>
         </div>
-        <div className="flex flex-col gap-1 rounded-3xl bg-surface px-4 py-4">
+        <div className="card flex flex-col gap-1 px-4 py-4">
           <span className="text-xs font-bold tracking-widest text-muted">WOLVES HAD</span>
           <span className="font-display text-2xl font-bold">{r.wolfWord}</span>
         </div>
@@ -535,7 +556,7 @@ export function MrWhiteResults({
             type="button"
             disabled={busy}
             onClick={() => go("start_game", { gameId: "mr-white", options: { mrWhite: state.settings?.mrWhiteChosen !== false, spoken: !!state.settings?.spoken } })}
-            className="h-16 w-full rounded-full bg-go font-display text-2xl font-bold text-ground disabled:opacity-60"
+            className="btn btn-primary h-16 w-full font-display text-2xl font-bold text-ink disabled:opacity-60"
           >
             Play again
           </button>

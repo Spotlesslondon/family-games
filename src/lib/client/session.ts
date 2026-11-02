@@ -142,6 +142,8 @@ const MESSAGES: Record<string, string> = {
   grown_ups_host: "Only a grown-up can start a game night.",
   room_not_found: "That game night has ended.",
   game_in_progress: "A game is already running. Wait for the next one.",
+  avatar_taken: "Someone else has that one. Pick another.",
+  not_in_room: "You are not in this game night.",
   busy_try_again: "Lots happening at once. Try again.",
   offline: "Could not reach Asher Games. Check your connection and try again.",
   too_many_requests: "Too many tries from this Wi-Fi. Wait a few minutes and try again.",

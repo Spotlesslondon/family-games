@@ -28,7 +28,7 @@ const BANDS: { value: string; label: string }[] = [
   { value: "16+", label: "16 or over" },
 ];
 
-const field = "h-13 rounded-2xl border-2 border-surface-2 bg-ground px-4 text-lg text-ink outline-none focus:border-go";
+const field = "h-13 rounded-2xl border-2 border-surface-2 bg-ground px-4 text-lg text-ink outline-none focus:border-pick";
 
 async function send(body: Record<string, unknown>): Promise<{ ok: boolean; error?: string; [k: string]: unknown }> {
   const res = await postAsMember("/api/lists", body).catch(() => null);
@@ -179,13 +179,13 @@ export default function Lists() {
       <p role="alert" aria-live="polite" className="-my-3 min-h-6 font-bold text-alert">{error ?? ""}</p>
 
       {lists.map((list) => (
-        <section key={list.id} className="flex flex-col gap-4 rounded-3xl bg-surface p-5">
+        <section key={list.id} className="card flex flex-col gap-4 p-5">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-display text-2xl font-semibold">{list.name}</h2>
             <button
               type="button"
               onClick={() => remove(list.id)}
-              className={`h-10 shrink-0 rounded-full px-4 text-sm font-bold ${confirmDelete === list.id ? "bg-alert text-ground" : "border-2 border-line text-muted"}`}
+              className={`h-10 shrink-0 btn px-4 text-sm font-bold ${confirmDelete === list.id ? "btn-danger" : "btn-secondary text-muted"}`}
             >
               {confirmDelete === list.id ? "Tap to delete" : "Delete"}
             </button>
@@ -202,9 +202,9 @@ export default function Lists() {
                       type="button"
                       aria-pressed={on}
                       onClick={() => toggle(list, p.id)}
-                      className={`flex h-12 items-center gap-2 rounded-full border-2 pl-1.5 pr-4 font-bold ${on ? "border-go bg-go text-ground" : "border-line"}`}
+                      className={`flex h-12 items-center gap-2 rounded-full border-2 pl-1.5 pr-4 font-bold ${on ? "border-pick bg-go text-ink" : "border-line"}`}
                     >
-                      <span className={`flex h-9 w-9 items-center justify-center rounded-full font-display ${on ? "bg-ground text-go" : "bg-surface-2"}`}>{initial(p.name)}</span>
+                      <span className={`flex h-9 w-9 items-center justify-center rounded-full font-display ${on ? "bg-ground text-ink" : "bg-surface-2"}`}>{initial(p.name)}</span>
                       {p.name}
                       {p.guest && <span className={`text-sm font-semibold ${on ? "" : "text-muted"}`}>guest</span>}
                     </button>
@@ -228,7 +228,7 @@ export default function Lists() {
                       type="button"
                       aria-pressed={newBand === b.value}
                       onClick={() => setNewBand(b.value)}
-                      className={`h-12 rounded-2xl border-2 font-bold ${newBand === b.value ? "border-go bg-go text-ground" : "border-surface-2 bg-ground"}`}
+                      className={`h-12 rounded-2xl border-2 font-bold ${newBand === b.value ? "border-pick bg-go text-ink" : "border-surface-2 bg-ground"}`}
                     >
                       {b.label}
                     </button>
@@ -237,8 +237,8 @@ export default function Lists() {
               </fieldset>
               <p className="text-sm text-muted">They join by your link and tap their name. No PIN.</p>
               <div className="grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => setAdding(null)} className="h-13 rounded-full border-2 border-line font-bold">Cancel</button>
-                <button type="submit" disabled={busy || !newName.trim() || !newBand} className="h-13 rounded-full bg-go font-bold text-ground disabled:opacity-60">
+                <button type="button" onClick={() => setAdding(null)} className="btn btn-secondary h-13 font-bold">Cancel</button>
+                <button type="submit" disabled={busy || !newName.trim() || !newBand} className="btn btn-primary h-13 font-bold text-ink disabled:opacity-60">
                   {busy ? "Adding..." : "Add"}
                 </button>
               </div>
@@ -251,7 +251,7 @@ export default function Lists() {
                 setNewName("");
                 setNewBand(null);
               }}
-              className="h-12 rounded-full border-2 border-dashed border-line font-bold"
+              className="btn btn-secondary h-12 border-dashed font-bold"
             >
               Add someone new
             </button>
@@ -264,7 +264,7 @@ export default function Lists() {
           <span className="font-display text-xl font-semibold">New list</span>
           <input className={field} value={newList} onChange={(e) => setNewList(e.target.value.slice(0, 40))} placeholder="Siblings" required />
         </label>
-        <button type="submit" disabled={busy || !newList.trim()} className="h-14 rounded-full bg-go font-display text-xl font-bold text-ground disabled:opacity-60">
+        <button type="submit" disabled={busy || !newList.trim()} className="btn btn-primary h-14 font-display text-xl font-bold text-ink disabled:opacity-60">
           {busy ? "Making..." : "Make the list"}
         </button>
       </form>

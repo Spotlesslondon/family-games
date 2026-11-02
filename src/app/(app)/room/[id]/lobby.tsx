@@ -18,6 +18,9 @@ import {
 } from "@/lib/client/session";
 import { Reconnect } from "@/app/(app)/reconnect";
 import { MrWhitePlay, MrWhiteResults, type MrWhiteMine, type MrWhitePublic } from "./mr-white-play";
+import { AvatarPick } from "./avatar-pick";
+import { PlayerAvatar } from "@/components/avatars";
+import { isAvatarKey, type AvatarKey } from "@/lib/avatars";
 
 interface RoomRow {
   id: string;
@@ -58,6 +61,8 @@ interface Seat {
   name: string;
   connected: boolean;
   colour: string;
+  /** Their character, or null if they have not picked one yet. */
+  avatar: AvatarKey | null;
 }
 
 export function Lobby() {
@@ -81,6 +86,7 @@ export function Lobby() {
   const [mine, setMine] = useState<Record<string, unknown>>({});
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [confirmLock, setConfirmLock] = useState(false);
+  const [picking, setPicking] = useState(false);
   // An armed "Lock the room" disarms itself after a few seconds.
   useEffect(() => {
     if (!confirmLock) return;
@@ -113,7 +119,7 @@ export function Lobby() {
     const [{ data: r }, { data: inRoom }, { data: people }, { data: secret }] = await Promise.all([
       db.from("rooms").select("id, code, join_code, locked_at, host_member_id, status, phase, current_game, state").eq("id", id).maybeSingle(),
       db.from("room_members").select("member_id, connected, joined_at").eq("room_id", id).order("joined_at"),
-      db.from("members").select("id, display_name").order("created_at"),
+      db.from("members").select("id, display_name, avatar").order("created_at"),
       db.from("room_private").select("state").eq("room_id", id).maybeSingle(),
     ]);
     setMine(((secret?.state as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>);
@@ -141,6 +147,7 @@ export function Lobby() {
       return;
     }
     const names = new Map((people ?? []).map((p) => [p.id as string, p.display_name as string]));
+    const avatars = new Map((people ?? []).map((p) => [p.id as string, isAvatarKey(p.avatar) ? p.avatar : null]));
     setRoom(r as RoomRow);
     setSeats(
       (inRoom ?? []).map((m) => ({
@@ -148,6 +155,7 @@ export function Lobby() {
         name: names.get(m.member_id as string) ?? "Someone",
         connected: m.connected as boolean,
         colour: avatarColour(m.member_id as string),
+        avatar: avatars.get(m.member_id as string) ?? null,
       }))
     );
   }, [id]);
@@ -278,7 +286,7 @@ export function Lobby() {
   if (ended) {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-16">
-        <div className="font-display text-xl font-bold text-go">Asher Games</div>
+        <div className="font-display text-xl font-bold text-ink">Asher Games</div>
         <h1 className="font-display text-3xl font-semibold">{ENDED[ended].title}</h1>
         <p className="text-lg text-muted">{ENDED[ended].body}</p>
       </main>
@@ -291,7 +299,7 @@ export function Lobby() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-16">
         <p className="text-lg">{error}</p>
-        <button type="button" onClick={() => router.replace("/home")} className="h-14 rounded-full bg-go font-display text-xl font-bold text-ground">Back home</button>
+        <button type="button" onClick={() => router.replace("/home")} className="btn btn-primary h-14 font-display text-xl font-bold text-ink">Back home</button>
       </main>
     );
   }
@@ -305,7 +313,7 @@ export function Lobby() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-16">
         <h1 className="font-display text-3xl font-semibold">Game night is over</h1>
         <p className="text-muted">The host has closed this room.</p>
-        <button type="button" onClick={() => router.replace("/home")} className="h-14 rounded-full bg-go font-display text-xl font-bold text-ground">Back home</button>
+        <button type="button" onClick={() => router.replace("/home")} className="btn btn-primary h-14 font-display text-xl font-bold text-ink">Back home</button>
       </main>
     );
   }
@@ -313,7 +321,8 @@ export function Lobby() {
   const isHost = room.host_member_id === session.member.id;
   const here = seats.length; // everyone in the room; anyone away is marked on their avatar
   const connectedCount = seats.filter((s) => s.connected).length;
-  const people = new Map(seats.map((s) => [s.id, { id: s.id, name: s.name, colour: s.colour }]));
+  const people = new Map(seats.map((s) => [s.id, { id: s.id, name: s.name, colour: s.colour, avatar: s.avatar }]));
+  const meSeat = seats.find((s) => s.id === session.member.id);
 
   // A game is running, or has just finished: the game's own screens take over.
   if (room.current_game === "mr-white" && room.phase !== "lobby") {
@@ -329,7 +338,7 @@ export function Lobby() {
           setConfirmEnd(false);
           act("end_game");
         }}
-        className={`h-10 rounded-full px-4 text-sm font-bold ${confirmEnd ? "bg-alert text-ground" : "border-2 border-line text-muted"}`}
+        className={`h-10 btn px-4 text-sm font-bold ${confirmEnd ? "btn-danger" : "btn-secondary text-muted"}`}
       >
         {confirmEnd ? "Tap to end the game" : "End this game"}
       </button>
@@ -337,7 +346,7 @@ export function Lobby() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
         <div className="flex items-center justify-between">
-          <h1 className="font-display text-2xl font-semibold text-go">Mr White</h1>
+          <h1 className="font-display text-2xl font-semibold text-ink">Mr White</h1>
           {hostEnd}
         </div>
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
@@ -358,41 +367,64 @@ export function Lobby() {
     );
   }
 
+  // Everyone picks a character before the lobby, and can change it there
+  // until a game starts by tapping their own (gameplay look brief, rule 1).
+  if (room.phase === "lobby" && meSeat && (!meSeat.avatar || picking)) {
+    const takenByOthers = seats
+      .filter((s) => s.id !== session.member.id && s.avatar)
+      .map((s) => ({ avatar: s.avatar as AvatarKey, name: s.name }));
+    return (
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
+        <AvatarPick
+          roomId={id}
+          myName={session.member.name}
+          current={meSeat.avatar}
+          takenByOthers={takenByOthers}
+          onDone={() => {
+            setPicking(false);
+            reload();
+          }}
+          onCancel={() => setPicking(false)}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-12">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-3xl font-semibold">Game night</h1>
-        {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ground">You are host</span>}
+        {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ink">You are host</span>}
       </div>
 
       {isHost && room.join_code && !room.locked_at ? (
-        <div className="flex flex-col gap-3 rounded-3xl bg-surface px-5 py-4">
+        <div className="card flex flex-col gap-3 px-5 py-4">
           <span className="text-xs font-bold tracking-widest text-muted">INVITE CODE</span>
-          <span className="font-display text-5xl font-bold tracking-[0.2em] text-go">{room.join_code}</span>
+          <span className="font-display text-5xl font-bold tracking-[0.2em] text-ink">{room.join_code}</span>
           <span className="text-sm text-muted">Send the link to your group chat. Anyone with it can join until you lock the room. To show the night on a TV, open the same link on the TV and choose Show on the TV.</span>
           <div className="grid grid-cols-2 gap-3">
             <a
               href={`https://wa.me/?text=${encodeURIComponent(`Join our game night on Asher Games: ${inviteUrl(room.join_code)}`)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex h-13 items-center justify-center rounded-full bg-go font-bold text-ground"
+              className="btn btn-primary flex h-13 items-center justify-center font-bold text-ink"
             >
               WhatsApp
             </a>
-            <button type="button" onClick={() => share(room.join_code as string)} className="h-13 rounded-full border-2 border-line font-bold">
+            <button type="button" onClick={() => share(room.join_code as string)} className="btn btn-secondary h-13 font-bold">
               {copied ? "Link copied" : "Share link"}
             </button>
           </div>
         </div>
       ) : isHost ? (
-        <div className="flex items-center justify-between gap-3 rounded-3xl bg-surface px-5 py-4">
+        <div className="card flex items-center justify-between gap-3 px-5 py-4">
           <span className="font-bold">You locked the room. The link no longer works.</span>
-          <button type="button" onClick={() => setLock(false)} className="h-11 shrink-0 rounded-full border-2 border-line px-4 font-bold">Open again</button>
+          <button type="button" onClick={() => setLock(false)} className="btn btn-secondary h-11 shrink-0 px-4 font-bold">Open again</button>
         </div>
       ) : (
-        <div className="flex flex-col gap-1 rounded-3xl bg-surface px-5 py-4">
+        <div className="card flex flex-col gap-1 px-5 py-4">
           <span className="text-xs font-bold tracking-widest text-muted">YOU ARE</span>
-          <span className="font-display text-3xl font-bold text-go">{session.member.name}</span>
+          <span className="font-display text-3xl font-bold text-ink">{session.member.name}</span>
         </div>
       )}
 
@@ -401,12 +433,24 @@ export function Lobby() {
         <ul className="grid grid-cols-3 gap-3">
           {seats.map((s) => (
             <li key={s.id} className="flex flex-col items-center gap-2">
-              <span
-                className={`flex h-16 w-16 items-center justify-center rounded-full font-display text-2xl font-bold ${s.connected ? "text-ground" : "border-2 border-dashed bg-surface-2"}`}
-                style={s.connected ? { background: s.colour } : { borderColor: s.colour, color: s.colour }}
-              >
-                {initial(s.name)}
-              </span>
+              {s.avatar ? (
+                <button
+                  type="button"
+                  disabled={s.id !== session.member.id || room.phase !== "lobby"}
+                  onClick={() => setPicking(true)}
+                  aria-label={s.id === session.member.id ? "Change my character" : s.name}
+                  className={s.connected ? "" : "opacity-40"}
+                >
+                  <PlayerAvatar avatar={s.avatar} className="h-20 w-auto" label={s.name} wobble={s.connected} />
+                </button>
+              ) : (
+                <span
+                  className={`flex h-16 w-16 items-center justify-center rounded-full border-4 border-ink font-display text-2xl ${s.connected ? "text-ink" : "border-dashed bg-surface-2"}`}
+                  style={s.connected ? { background: s.colour } : undefined}
+                >
+                  {initial(s.name)}
+                </span>
+              )}
               <span className={`text-center text-sm font-bold ${s.connected ? "" : "text-muted"}`}>
                 {s.id === session.member.id ? "You" : s.name}
                 {s.id === room.host_member_id ? " · host" : ""}
@@ -416,7 +460,7 @@ export function Lobby() {
                 <button
                   type="button"
                   onClick={() => removePlayer(s.id)}
-                  className={`h-9 rounded-full px-3 text-sm font-bold ${confirmRemove === s.id ? "bg-alert text-ground" : "border-2 border-line text-muted"}`}
+                  className={`h-9 btn px-3 text-sm font-bold ${confirmRemove === s.id ? "btn-danger" : "btn-secondary text-muted"}`}
                 >
                   {confirmRemove === s.id ? "Tap to remove" : "Remove"}
                 </button>
@@ -430,7 +474,7 @@ export function Lobby() {
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
         {isHost ? (
           <>
-            <div className="flex flex-col gap-2 rounded-3xl bg-surface p-3" role="group" aria-label="Mr White settings">
+            <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Mr White settings">
               <button
                 type="button"
                 aria-pressed={mrWhiteOn}
@@ -438,7 +482,7 @@ export function Lobby() {
                 className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
               >
                 <span>Mr White, with no word{connectedCount < 5 ? " (from 5 players)" : ""}</span>
-                <span className={`rounded-full px-3 py-1 text-sm ${mrWhiteOn ? "bg-go text-ground" : "bg-surface-2 text-muted"}`}>{mrWhiteOn ? "On" : "Off"}</span>
+                <span className={`rounded-full px-3 py-1 text-sm ${mrWhiteOn ? "bg-go text-ink" : "bg-surface-2 text-muted"}`}>{mrWhiteOn ? "On" : "Off"}</span>
               </button>
               <button
                 type="button"
@@ -457,7 +501,7 @@ export function Lobby() {
                 const out = await act("start_game", { gameId: "mr-white", options: { mrWhite: mrWhiteOn, spoken } });
                 if (out && out.ok === false) setActionError(message(out.reason));
               }}
-              className="h-16 rounded-full bg-go font-display text-2xl font-bold text-ground disabled:bg-surface-2 disabled:text-muted"
+              className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
               {connectedCount < 3 ? "Mr White needs 3 players" : "Play Mr White"}
             </button>
@@ -475,20 +519,20 @@ export function Lobby() {
                     setConfirmLock(false);
                     setLock(true);
                   }}
-                  className={`h-12 rounded-full px-3 text-sm font-bold ${confirmLock ? "bg-alert text-ground" : "border-2 border-line"}`}
+                  className={`h-12 btn px-3 text-sm font-bold ${confirmLock ? "btn-danger" : "btn-secondary"}`}
                 >
                   {confirmLock ? "Tap again: nobody else can join" : "Lock the room"}
                 </button>
               ) : (
                 <span />
               )}
-              <button type="button" onClick={closeRoom} className="h-12 rounded-full border-2 border-line px-3 text-sm font-bold">End game night</button>
+              <button type="button" onClick={closeRoom} className="btn btn-secondary h-12 px-3 text-sm font-bold">End game night</button>
             </div>
           </>
         ) : (
           <>
             <p className="text-center text-muted">Waiting for the host to start a game</p>
-            <button type="button" onClick={leave} className="h-13 rounded-full border-2 border-line font-bold">Leave the room</button>
+            <button type="button" onClick={leave} className="btn btn-secondary h-13 font-bold">Leave the room</button>
           </>
         )}
       </div>

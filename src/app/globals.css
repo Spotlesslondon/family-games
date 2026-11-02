@@ -1,14 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --ground: #12162b;
-  --surface: #1e2440;
-  --surface-2: #2a3156;
-  --line: #4a5280;
-  --ink: #f5f3ee;
-  --muted: #a9b0cc;
-  --go: #ffc93c;
-  --alert: #ff7a66;
+  /* Paper and ink (look brief v1; gameplay look brief v1, approved 2 Nov).
+     Reading text only on paper, white or yellow: ink on those is 13 to 17:1. */
+  --ground: #fff1cf;
+  --surface: #ffffff;
+  --surface-2: #f6e3b4;
+  --line: #111111;
+  --ink: #111111;
+  --muted: #4a4334;
+  --go: #ffd23f;
+  --alert: #b3261e;
+  --pick: #2f6bff;
 }
 
 @theme inline {
@@ -20,14 +23,72 @@
   --color-muted: var(--muted);
   --color-go: var(--go);
   --color-alert: var(--alert);
-  --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-fredoka), var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  --color-pick: var(--pick);
+  --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bagel), var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
   background: var(--ground);
   color: var(--ink);
   font-family: var(--font-sans);
+}
+
+/* Paper-and-ink parts (look brief v1): chunky rectangles with a 4px ink
+   outline and a hard shadow that presses in when tapped. */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 4px solid var(--ink);
+    border-radius: 6px;
+    box-shadow: 4px 4px 0 var(--ink);
+    font-weight: 700;
+    color: var(--ink);
+    transition: transform 60ms ease-out, box-shadow 60ms ease-out;
+  }
+  .btn:active:not(:disabled) {
+    transform: translate(4px, 4px);
+    box-shadow: none;
+  }
+  .btn:disabled {
+    box-shadow: none;
+    opacity: 0.5;
+  }
+  .btn-primary {
+    background: var(--go);
+  }
+  .btn-secondary {
+    background: var(--surface);
+  }
+  .btn-danger {
+    background: var(--alert);
+    color: #fff;
+  }
+  .card {
+    background: var(--surface);
+    border: 4px solid var(--ink);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 var(--ink);
+  }
+}
+
+/* Bagel Fat One has one weight: never let the browser fake a bold version. */
+.font-display {
+  font-synthesis-weight: none;
+}
+
+/* Characters wobble in the lobby, unless the phone asks for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .avatar-wobble {
+    animation: avatar-wobble 2.4s ease-in-out infinite;
+    transform-origin: 50% 90%;
+  }
+  @keyframes avatar-wobble {
+    0%, 100% { transform: rotate(-3deg); }
+    50% { transform: rotate(3deg); }
+  }
 }
 
 /* "See what is coming" scrolls smoothly, unless the phone asks for less motion. */

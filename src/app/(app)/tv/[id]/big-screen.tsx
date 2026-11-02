@@ -9,6 +9,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { avatarColour, initial, loadSession, memberClient } from "@/lib/client/session";
+import { PlayerAvatar } from "@/components/avatars";
+import { isAvatarKey, type AvatarKey } from "@/lib/avatars";
 import { SIDE_NAME, findThemLine, hiddenLine, stillHiddenLine, stillIn, wasLine, type MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
 
 interface RoomRow {
@@ -26,6 +28,7 @@ interface Person {
   id: string;
   name: string;
   connected: boolean;
+  avatar: AvatarKey | null;
 }
 
 type State = "loading" | "watching" | "over" | "gone" | "offline";
@@ -44,7 +47,7 @@ export function BigScreen() {
     const [{ data: r }, { data: inRoom }, { data: names }] = await Promise.all([
       db.from("rooms").select("code, join_code, locked_at, host_member_id, status, current_game, phase, state").eq("id", id).maybeSingle(),
       db.from("room_members").select("member_id, connected, joined_at").eq("room_id", id).order("joined_at"),
-      db.from("members").select("id, display_name"),
+      db.from("members").select("id, display_name, avatar"),
     ]);
     if (!r) {
       setState("gone");
@@ -61,9 +64,15 @@ export function BigScreen() {
       return;
     }
     const byId = new Map((names ?? []).map((m) => [m.id as string, m.display_name as string]));
+    const avatarOf = new Map((names ?? []).map((m) => [m.id as string, isAvatarKey(m.avatar) ? m.avatar : null]));
     setRoom(r as RoomRow);
     setPeople(
-      (inRoom ?? []).map((m) => ({ id: m.member_id as string, name: byId.get(m.member_id as string) ?? "Someone", connected: m.connected as boolean }))
+      (inRoom ?? []).map((m) => ({
+        id: m.member_id as string,
+        name: byId.get(m.member_id as string) ?? "Someone",
+        connected: m.connected as boolean,
+        avatar: avatarOf.get(m.member_id as string) ?? null,
+      }))
     );
     setState("watching");
   }, [id]);
@@ -136,7 +145,7 @@ export function BigScreen() {
       <main className="flex flex-1 flex-col items-center justify-center gap-8 px-10 text-center">
         <h1 className="font-display text-5xl font-semibold">Can&apos;t reach Asher Games</h1>
         <p className="text-2xl text-muted">Check the Wi-Fi, then try again.</p>
-        <button type="button" onClick={() => setAttempt((n) => n + 1)} className="h-16 rounded-full bg-go px-10 font-display text-2xl font-bold text-ground">Try again</button>
+        <button type="button" onClick={() => setAttempt((n) => n + 1)} className="btn btn-primary h-16 px-10 font-display text-2xl font-bold text-ink">Try again</button>
       </main>
     );
   }
@@ -144,7 +153,7 @@ export function BigScreen() {
   if (state === "over" || state === "gone") {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-6 px-10 text-center">
-        <div className="font-display text-3xl font-bold text-go">Asher Games</div>
+        <div className="font-display text-3xl font-bold text-ink">Asher Games</div>
         <h1 className="font-display text-6xl font-semibold">{state === "over" ? "Game night is over" : "This TV is not showing a game night"}</h1>
         <p className="text-2xl text-muted">{state === "over" ? "Thanks for playing." : "To show the next one, open the host's link on this screen and choose Show on the TV."}</p>
       </main>
@@ -161,14 +170,14 @@ export function BigScreen() {
   return (
     <main className="flex flex-1 flex-col gap-10 px-[5vw] py-[4vh]">
       <header className="flex items-center justify-between">
-        <div className="font-display text-[clamp(1.5rem,3vw,3rem)] font-bold text-go">Asher Games</div>
+        <div className="font-display text-[clamp(1.5rem,3vw,3rem)] font-bold text-ink">Asher Games</div>
         <div className="text-[clamp(1.1rem,2vw,2rem)] text-muted">{host ? `${host.name}'s game night` : "Game night"}</div>
       </header>
 
       {open ? (
         <section className="flex flex-col items-center gap-3 rounded-[2rem] bg-surface px-8 py-[4vh] text-center">
           <span className="text-[clamp(1.1rem,2.2vw,2.2rem)] font-bold text-muted">Join on your phone: ashergames.com/j/</span>
-          <span className="font-display text-[clamp(4rem,14vw,12rem)] font-bold leading-none tracking-[0.12em] text-go">{room?.join_code}</span>
+          <span className="font-display text-[clamp(4rem,14vw,12rem)] font-bold leading-none tracking-[0.12em] text-ink">{room?.join_code}</span>
           <span className="text-[clamp(1rem,1.8vw,1.8rem)] text-muted">or tap the link the host sent to your group chat</span>
         </section>
       ) : (
@@ -180,11 +189,8 @@ export function BigScreen() {
         <ul className="flex flex-wrap gap-[3vw]">
           {people.map((p) => (
             <li key={p.id} className="flex flex-col items-center gap-3">
-              <span
-                className={`flex h-[clamp(5rem,9vw,9rem)] w-[clamp(5rem,9vw,9rem)] items-center justify-center rounded-full font-display text-[clamp(2.2rem,4vw,4rem)] font-bold ${p.connected ? "text-ground" : "border-4 border-dashed bg-surface-2"}`}
-                style={p.connected ? { background: avatarColour(p.id) } : { borderColor: avatarColour(p.id), color: avatarColour(p.id) }}
-              >
-                {initial(p.name)}
+              <span className={p.connected ? "" : "opacity-40"}>
+                <TvFace person={p} size="clamp(5rem,9vw,9rem)" wobble={p.connected} />
               </span>
               <span className={`text-[clamp(1.1rem,2vw,2rem)] font-bold ${p.connected ? "" : "text-muted"}`}>
                 {p.name}
@@ -200,11 +206,21 @@ export function BigScreen() {
   );
 }
 
-function TvFace({ colour, name }: { colour: string; name: string }) {
-  const size = "clamp(5rem,10vw,10rem)";
+/** A player on the TV: their character, or their initial if they have not picked one. */
+function TvFace({ person, size = "clamp(5rem,10vw,10rem)", wobble = false }: { person?: Person; size?: string; wobble?: boolean }) {
+  if (person?.avatar) {
+    return (
+      <span className="inline-flex" style={{ height: size }}>
+        <PlayerAvatar avatar={person.avatar} className="h-full w-auto" label={person.name} wobble={wobble} />
+      </span>
+    );
+  }
   return (
-    <span className="flex items-center justify-center rounded-full font-display font-bold text-ground" style={{ background: colour, width: size, height: size, fontSize: `calc(${size} / 2.2)` }}>
-      {initial(name)}
+    <span
+      className="flex items-center justify-center rounded-full border-4 border-ink font-display text-ink"
+      style={{ background: avatarColour(person?.id ?? ""), width: size, height: size, fontSize: `calc(${size} / 2.2)` }}
+    >
+      {initial(person?.name ?? "?")}
     </span>
   );
 }
@@ -213,11 +229,10 @@ function TvFace({ colour, name }: { colour: string; name: string }) {
 function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePublic; people: Person[] }) {
   const order = state.order ?? [];
   const left = stillIn(state);
-  const colour = (id?: string) => avatarColour(id ?? "");
   const name = (id?: string) => people.find((p) => p.id === id)?.name ?? "Someone";
   const headline = "font-display text-[clamp(2.2rem,5.5vw,5.5rem)] font-bold leading-none";
   const sub = "text-[clamp(1.2rem,2.4vw,2.4rem)] text-muted";
-  const face = (id?: string) => <TvFace colour={colour(id)} name={name(id)} />;
+  const face = (id?: string) => <TvFace person={people.find((p) => p.id === id)} />;
   const spoken = !!state.settings?.spoken;
   const outSide = new Map((state.out ?? []).map((o) => [o.id, o.side]));
   const speaker = phase === "clues" ? left[state.turn ?? 0] : undefined;
@@ -230,9 +245,7 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
         const theirs = (state.clues ?? []).filter((c) => c.id === id);
         return (
           <li key={id} className={`flex items-center gap-[1.2vw] rounded-[1.5rem] px-[1.2vw] py-[1vh] text-left ${id === speaker ? "bg-surface-2 ring-4 ring-go" : "bg-surface"} ${side ? "opacity-50" : ""}`}>
-            <span className="flex h-[clamp(3rem,5vw,5rem)] w-[clamp(3rem,5vw,5rem)] shrink-0 items-center justify-center rounded-full font-display text-[clamp(1.4rem,2.4vw,2.4rem)] font-bold text-ground" style={{ background: colour(id) }}>
-              {initial(name(id))}
-            </span>
+            <TvFace person={people.find((p) => p.id === id)} size="clamp(3rem,5vw,5rem)" />
             <div className="flex min-w-0 flex-col">
               <span className="text-[clamp(1rem,1.6vw,1.6rem)] font-bold text-muted">
                 {name(id)}
@@ -271,7 +284,7 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
             {face(speaker)}
             <ol className="flex flex-wrap justify-center gap-3">
               {left.map((id, i) => (
-                <li key={id} className={`rounded-full px-5 py-2 text-[clamp(1rem,1.8vw,1.8rem)] font-bold ${i === state.turn ? "bg-go text-ground" : i < (state.turn ?? 0) ? "text-muted line-through" : "bg-surface"}`}>
+                <li key={id} className={`rounded-full px-5 py-2 text-[clamp(1rem,1.8vw,1.8rem)] font-bold ${i === state.turn ? "bg-go text-ink" : i < (state.turn ?? 0) ? "text-muted line-through" : "bg-surface"}`}>
                   {name(id)}
                 </li>
               ))}
@@ -328,9 +341,9 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
     const hidden = order.filter((id) => r.sides[id] !== "villager");
     body = (
       <>
-        <h1 className={`${headline} text-go`}>{title}</h1>
+        <h1 className={`${headline} text-ink`}>{title}</h1>
         <p className="text-[clamp(1.5rem,3.2vw,3.2rem)]">
-          Villagers had <span className="font-display font-bold text-go">{r.villagerWord}</span>, Wolves had <span className="font-display font-bold">{r.wolfWord}</span>
+          Villagers had <span className="font-display font-bold text-ink">{r.villagerWord}</span>, Wolves had <span className="font-display font-bold">{r.wolfWord}</span>
         </p>
         <div className="flex flex-wrap justify-center gap-[3vw]">
           {hidden.map((id) => (
@@ -348,7 +361,7 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-[3vh] px-[4vw] py-[3vh] text-center">
-      <div className="font-display text-[clamp(1.5rem,3vw,3rem)] font-bold text-go">Mr White</div>
+      <div className="font-display text-[clamp(1.5rem,3vw,3rem)] font-bold text-ink">Mr White</div>
       {body}
     </main>
   );

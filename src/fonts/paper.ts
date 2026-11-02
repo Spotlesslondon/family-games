@@ -9,6 +9,7 @@ import localFont from "next/font/local";
 /** Paper-and-ink headings (look brief v1; recommended in tech-answers-look-brief). */
 export const bagelFatOne = localFont({
   src: [{ path: "./bagel-fat-one-latin-400-normal.woff2", weight: "400" }],
+  variable: "--font-bagel",
   display: "swap",
 });
 
@@ -18,5 +19,6 @@ export const atkinsonNext = localFont({
     { path: "./atkinson-hyperlegible-next-latin-400-normal.woff2", weight: "400" },
     { path: "./atkinson-hyperlegible-next-latin-700-normal.woff2", weight: "700" },
   ],
+  variable: "--font-atkinson",
   display: "swap",
 });

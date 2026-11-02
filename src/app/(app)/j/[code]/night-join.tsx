@@ -3,6 +3,8 @@
 // The page a WhatsApp invite opens: ashergames.com/j/583920.
 // No account, no PIN: tap your name (or add yourself) and you are in.
 
+import { PlayerAvatar } from "@/components/avatars";
+import type { AvatarKey } from "@/lib/avatars";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { avatarColour, forgetSession, initial, loadSession, message, newPhoneSession, postAsMember, rememberSeat } from "@/lib/client/session";
@@ -11,6 +13,7 @@ interface Person {
   id: string;
   name: string;
   taken: boolean;
+  avatar?: AvatarKey | null;
 }
 
 const BANDS: { value: string; label: string }[] = [
@@ -114,7 +117,7 @@ export function NightJoin() {
   if (gone) {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pt-16">
-        <div className="font-display text-xl font-bold text-go">Asher Games</div>
+        <div className="font-display text-xl font-bold text-ink">Asher Games</div>
         <h1 className="font-display text-3xl font-semibold">This link has closed</h1>
         <p className="text-lg text-muted">{gone}</p>
       </main>
@@ -127,7 +130,7 @@ export function NightJoin() {
         {error ? (
           <>
             <p role="alert" className="text-center font-bold text-alert">{error}</p>
-            <button type="button" onClick={look} className="h-14 w-full rounded-full bg-go font-display text-xl font-bold text-ground">Try again</button>
+            <button type="button" onClick={look} className="btn btn-primary h-14 w-full font-display text-xl font-bold text-ink">Try again</button>
           </>
         ) : (
           "Loading..."
@@ -161,7 +164,7 @@ export function NightJoin() {
           <label className="flex flex-col gap-2">
             <span className="font-bold">Your first name</span>
             <input
-              className="h-16 rounded-2xl border-2 border-surface-2 bg-surface px-4 font-display text-2xl font-bold outline-none focus:border-go"
+              className="card h-16 border-2 border-surface-2 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
               value={name}
               onChange={(e) => setName(e.target.value.slice(0, 40))}
               autoComplete="given-name"
@@ -179,7 +182,7 @@ export function NightJoin() {
                   type="button"
                   aria-pressed={band === b.value}
                   onClick={() => setBand(b.value)}
-                  className={`h-14 rounded-2xl border-2 font-bold ${band === b.value ? "border-go bg-go text-ground" : "border-surface-2 bg-surface"}`}
+                  className={`h-14 rounded-2xl border-2 font-bold ${band === b.value ? "border-pick bg-go text-ink" : "border-surface-2 bg-surface"}`}
                 >
                   {b.label}
                 </button>
@@ -187,7 +190,7 @@ export function NightJoin() {
             </div>
           </fieldset>
           <p role="alert" aria-live="polite" className="min-h-6 text-center font-bold text-alert">{error ?? ""}</p>
-          <button type="submit" disabled={busy || !name.trim() || !band} className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground disabled:opacity-60">
+          <button type="submit" disabled={busy || !name.trim() || !band} className="btn btn-primary h-15 font-display text-xl font-bold text-ink disabled:opacity-60">
             {busy ? "Joining..." : "Join game night"}
           </button>
         </form>
@@ -198,7 +201,7 @@ export function NightJoin() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-8 pt-12">
       <div className="flex flex-col gap-1.5">
-        <div className="font-display text-xl font-bold text-go">Asher Games</div>
+        <div className="font-display text-xl font-bold text-ink">Asher Games</div>
         <div className="text-muted">{night.host}&apos;s game night</div>
       </div>
       <h1 className="font-display text-4xl font-semibold leading-tight">Who are you?</h1>
@@ -211,11 +214,15 @@ export function NightJoin() {
               type="button"
               disabled={p.taken || busy}
               onClick={() => claim({ memberId: p.id })}
-              className="flex flex-col items-center gap-3 rounded-3xl border-2 border-surface-2 bg-surface px-3 py-5 disabled:opacity-50"
+              className="card flex flex-col items-center gap-3 border-2 border-surface-2 px-3 py-5 disabled:opacity-50"
             >
-              <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ground" style={{ background: avatarColour(p.id) }}>
-                {initial(p.name)}
-              </span>
+              {p.avatar ? (
+                <PlayerAvatar avatar={p.avatar} className="h-20 w-auto" label={p.name} />
+              ) : (
+                <span className="flex h-18 w-18 items-center justify-center rounded-full border-4 border-ink font-display text-3xl text-ink" style={{ background: avatarColour(p.id) }}>
+                  {initial(p.name)}
+                </span>
+              )}
               <span className="text-lg font-bold">{p.name}</span>
               {p.taken && <span className="-mt-2 text-sm font-semibold text-muted">already in</span>}
             </button>
@@ -228,7 +235,7 @@ export function NightJoin() {
           setGuest(true);
           setError(null);
         }}
-        className="h-15 rounded-full border-2 border-line font-display text-xl font-bold"
+        className="btn btn-secondary h-15 font-display text-xl font-bold"
       >
         {night.people.length > 0 ? "I'm not on the list" : "Join with my name"}
       </button>
@@ -238,7 +245,7 @@ export function NightJoin() {
           type="button"
           disabled={busy}
           onClick={() => claim({ screen: true })}
-          className="h-13 rounded-full border-2 border-line font-bold disabled:opacity-60"
+          className="btn btn-secondary h-13 font-bold disabled:opacity-60"
         >
           Show on the TV
         </button>

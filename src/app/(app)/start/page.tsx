@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { forgetSession, message } from "@/lib/client/session";
 
-const field = "h-14 rounded-2xl border-2 border-surface-2 bg-surface px-4 text-lg text-ink outline-none focus:border-go";
+const field = "h-14 rounded-2xl border-2 border-surface-2 bg-surface px-4 text-lg text-ink outline-none focus:border-pick";
 
 export default function StartFamily() {
   const router = useRouter();
@@ -41,7 +41,7 @@ export default function StartFamily() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-8 pt-12">
-      <div className="font-display text-xl font-bold text-go">Asher Games</div>
+      <div className="font-display text-xl font-bold text-ink">Asher Games</div>
       <h1 className="font-display text-4xl font-semibold">Start your family</h1>
       <p className="text-muted">You will be the family owner. You can add everyone else next.</p>
       <form onSubmit={submit} className="flex flex-col gap-4">
@@ -68,7 +68,7 @@ export default function StartFamily() {
           </label>
         </div>
         {error && <p role="alert" className="font-bold text-alert">{error}</p>}
-        <button type="submit" disabled={busy} className="mt-2 h-15 rounded-full bg-go font-display text-xl font-bold text-ground disabled:opacity-60">
+        <button type="submit" disabled={busy} className="btn btn-primary mt-2 h-15 font-display text-xl font-bold text-ink disabled:opacity-60">
           {busy ? "Setting up..." : "Create our family"}
         </button>
       </form>

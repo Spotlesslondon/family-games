@@ -77,7 +77,7 @@ export default function Join() {
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
-        <span className="flex h-26 w-26 items-center justify-center rounded-full font-display text-5xl font-bold text-ground" style={{ background: chosen.colour }}>
+        <span className="flex h-26 w-26 items-center justify-center rounded-full font-display text-5xl font-bold text-ink" style={{ background: chosen.colour }}>
           {initial(chosen.member.name)}
         </span>
         <h1 className="font-display text-3xl font-semibold">Hi {chosen.member.name}</h1>
@@ -114,7 +114,7 @@ export default function Join() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-7 px-6 pb-8 pt-14">
         <div className="flex flex-col gap-1.5">
-          <div className="font-display text-xl font-bold text-go">Asher Games</div>
+          <div className="font-display text-xl font-bold text-ink">Asher Games</div>
           <div className="text-muted">{family.name}</div>
         </div>
         <h1 className="font-display text-4xl font-semibold leading-tight">Who is playing?</h1>
@@ -124,9 +124,9 @@ export default function Join() {
               key={m.id}
               type="button"
               onClick={() => setChosen({ member: m, colour: avatarColour(m.id) })}
-              className="flex flex-col items-center gap-3 rounded-3xl border-2 border-surface-2 bg-surface px-3 py-5"
+              className="card flex flex-col items-center gap-3 border-2 border-surface-2 px-3 py-5"
             >
-              <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ground" style={{ background: avatarColour(m.id) }}>
+              <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ink" style={{ background: avatarColour(m.id) }}>
                 {initial(m.name)}
               </span>
               <span className="text-lg font-bold">{m.name}</span>
@@ -139,14 +139,14 @@ export default function Join() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 pb-8 pt-14">
-      <div className="font-display text-xl font-bold text-go">Asher Games</div>
+      <div className="font-display text-xl font-bold text-ink">Asher Games</div>
       <h1 className="font-display text-4xl font-semibold">Join your family</h1>
       <p className="text-muted">Type the six-letter family code, or the six-number game night code the host sent.</p>
       <form onSubmit={findFamily} className="flex flex-col gap-4">
         <label className="flex flex-col gap-2">
           <span className="font-bold">Code</span>
           <input
-            className="h-16 rounded-2xl border-2 border-surface-2 bg-surface px-4 text-center font-display text-3xl font-bold uppercase tracking-[0.3em] text-go outline-none focus:border-go"
+            className="card h-16 border-2 border-surface-2 px-4 text-center font-display text-3xl font-bold uppercase tracking-[0.3em] text-ink outline-none focus:border-pick"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
             autoCapitalize="characters"
@@ -155,7 +155,7 @@ export default function Join() {
           />
         </label>
         {error && <p role="alert" className="font-bold text-alert">{error}</p>}
-        <button type="submit" disabled={busy || code.length !== 6} className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground disabled:opacity-60">
+        <button type="submit" disabled={busy || code.length !== 6} className="btn btn-primary h-15 font-display text-xl font-bold text-ink disabled:opacity-60">
           {busy ? "Looking..." : /^[0-9]{6}$/.test(code) ? "Join game night" : "Find my family"}
         </button>
       </form>
