@@ -18,6 +18,8 @@ import {
 } from "@/lib/client/session";
 import { Reconnect } from "@/app/(app)/reconnect";
 import { MrWhitePlay, MrWhiteResults, type MrWhiteMine, type MrWhitePublic } from "./mr-white-play";
+import { QuizPlay, QuizResults } from "./quiz-play";
+import type { QuizLength, QuizMine, QuizPublic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
 import { PlayerAvatar } from "@/components/avatars";
 import { isAvatarKey, type AvatarKey } from "@/lib/avatars";
@@ -96,6 +98,8 @@ export function Lobby() {
   // Mr White settings, for the host: Mr White on and typed clues by default.
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
+  const [game, setGame] = useState<"mr-white" | "quiz">("mr-white");
+  const [quizLength, setQuizLength] = useState<QuizLength>("normal");
 
   // Every action asks the session store for a current token, so a game night
   // longer than the one-hour token keeps working.
@@ -336,7 +340,8 @@ export function Lobby() {
   const meSeat = seats.find((s) => s.id === session.member.id);
 
   // A game is running, or has just finished: the game's own screens take over.
-  if (room.current_game === "mr-white" && room.phase !== "lobby") {
+  if ((room.current_game === "mr-white" || room.current_game === "quiz") && room.phase !== "lobby") {
+    const isQuiz = room.current_game === "quiz";
     const hostEnd = isHost && room.phase !== "results" && (
       <button
         type="button"
@@ -357,11 +362,25 @@ export function Lobby() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
         <div className="flex items-center justify-between">
-          <h1 className="font-display text-2xl font-semibold text-ink">Mr White</h1>
+          <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : "Mr White"}</h1>
           {hostEnd}
         </div>
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
-        {room.phase === "results" ? (
+        {isQuiz ? (
+          room.phase === "results" ? (
+            <QuizResults state={room.state as unknown as QuizPublic} me={session.member.id} hostId={room.host_member_id} people={people} act={act} />
+          ) : (
+            <QuizPlay
+              phase={room.phase}
+              state={room.state as unknown as QuizPublic}
+              mine={mine as unknown as QuizMine}
+              me={session.member.id}
+              hostId={room.host_member_id}
+              people={people}
+              act={act}
+            />
+          )
+        ) : room.phase === "results" ? (
           <MrWhiteResults state={room.state as MrWhitePublic} me={session.member.id} hostId={room.host_member_id} people={people} act={act} />
         ) : (
           <MrWhitePlay
@@ -485,36 +504,77 @@ export function Lobby() {
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
         {isHost ? (
           <>
-            <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Mr White settings">
-              <button
-                type="button"
-                aria-pressed={mrWhiteOn}
-                onClick={() => setMrWhiteOn((v) => !v)}
-                className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
-              >
-                <span>Mr White, with no word{connectedCount < 5 ? " (from 5 players)" : ""}</span>
-                <span className={`rounded-full px-3 py-1 text-sm ${mrWhiteOn ? "bg-go text-ink" : "bg-surface-2 text-muted"}`}>{mrWhiteOn ? "On" : "Off"}</span>
-              </button>
-              <button
-                type="button"
-                aria-pressed={spoken}
-                onClick={() => setSpoken((v) => !v)}
-                className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
-              >
-                <span>Clues</span>
-                <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{spoken ? "Said out loud" : "Typed on phones"}</span>
-              </button>
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Choose a game">
+              {([
+                ["mr-white", "Mr White"],
+                ["quiz", "The quiz"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={game === key}
+                  onClick={() => setGame(key)}
+                  className={`card relative h-14 font-display text-xl font-semibold ${game === key ? "ring-4 ring-pick" : "opacity-70"}`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+            {game === "mr-white" ? (
+              <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Mr White settings">
+                <button
+                  type="button"
+                  aria-pressed={mrWhiteOn}
+                  onClick={() => setMrWhiteOn((v) => !v)}
+                  className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+                >
+                  <span>Mr White, with no word{connectedCount < 5 ? " (from 5 players)" : ""}</span>
+                  <span className={`rounded-full px-3 py-1 text-sm ${mrWhiteOn ? "bg-go text-ink" : "bg-surface-2 text-muted"}`}>{mrWhiteOn ? "On" : "Off"}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={spoken}
+                  onClick={() => setSpoken((v) => !v)}
+                  className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+                >
+                  <span>Clues</span>
+                  <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{spoken ? "Said out loud" : "Typed on phones"}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Quiz settings">
+                <p className="px-3 text-sm text-muted">Everyone gets questions at their own level, on their own phone.</p>
+                <button
+                  type="button"
+                  onClick={() => setQuizLength((l) => (l === "short" ? "normal" : l === "normal" ? "long" : "short"))}
+                  className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+                >
+                  <span>Length</span>
+                  <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">
+                    {quizLength === "short" ? "Short, 5 questions" : quizLength === "long" ? "Long, 12 questions" : "Normal, 8 questions"}
+                  </span>
+                </button>
+              </div>
+            )}
             <button
               type="button"
-              disabled={connectedCount < 3}
+              disabled={connectedCount < (game === "quiz" ? 2 : 3)}
               onClick={async () => {
-                const out = await act("start_game", { gameId: "mr-white", options: { mrWhite: mrWhiteOn, spoken } });
+                const out =
+                  game === "quiz"
+                    ? await act("start_game", { gameId: "quiz", options: { length: quizLength } })
+                    : await act("start_game", { gameId: "mr-white", options: { mrWhite: mrWhiteOn, spoken } });
                 if (out && out.ok === false) setActionError(message(out.reason));
               }}
               className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
-              {connectedCount < 3 ? "Mr White needs 3 players" : "Play Mr White"}
+              {game === "quiz"
+                ? connectedCount < 2
+                  ? "The quiz needs 2 players"
+                  : "Play the quiz"
+                : connectedCount < 3
+                  ? "Mr White needs 3 players"
+                  : "Play Mr White"}
             </button>
             {/* Small and apart from Play, with a second tap to confirm: on 2 Nov the
                 big yellow lock button above Play was tapped two seconds before a game. */}

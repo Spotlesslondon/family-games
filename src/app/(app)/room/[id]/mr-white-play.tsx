@@ -96,7 +96,7 @@ export function stillIn(state: MrWhitePublic): string[] {
 }
 
 /** A player's character, or their initial in a circle if they have not picked one. */
-function Avatar({ p, size = "h-14 w-14 text-2xl", faded = false }: { p?: Person; size?: string; faded?: boolean }) {
+export function Avatar({ p, size = "h-14 w-14 text-2xl", faded = false }: { p?: Person; size?: string; faded?: boolean }) {
   if (p?.avatar) {
     // The character is a little taller than wide: keep the size's height, let the width follow.
     const height = size.split(" ").find((c) => c.startsWith("h-")) ?? "h-14";
@@ -113,7 +113,7 @@ function Avatar({ p, size = "h-14 w-14 text-2xl", faded = false }: { p?: Person;
 }
 
 /** The selected mark: a tick in a blue badge, so a choice never relies on colour alone. */
-function Tick() {
+export function Tick() {
   return (
     <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border-[3px] border-ink bg-pick" aria-hidden="true">
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round">
