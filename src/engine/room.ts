@@ -221,7 +221,12 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
     const game = getGame(gameId);
     if (!game) return reject("unknown_game");
 
-    const ids = room.members.filter((m) => m.connected).map((m) => m.id);
+    // The host who taps Play is plainly here, even if their phone was marked
+    // away (a late "away" from switching to WhatsApp to send the link left the
+    // host out of their own game on 2 Nov). Everyone else must be present.
+    const hostWasAway = memberOf(ctx, actor)?.connected === false;
+    const members = hostWasAway ? room.members.map((m) => (m.id === actor ? { ...m, connected: true } : m)) : room.members;
+    const ids = members.filter((m) => m.connected).map((m) => m.id);
     if (ids.length < game.minPlayers) return reject("too_few_players");
     if (ids.length > game.maxPlayers) return reject("too_many_players");
 
@@ -242,7 +247,13 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
       { memberId: actor, type: "game_started", payload: { game: gameId, players: ids } },
     ]);
     if (!finished.ok || finished.noop) return finished;
-    return accept({ ...finished.write, currentGame: gameId });
+    if (!hostWasAway) return accept({ ...finished.write, currentGame: gameId });
+    return accept({
+      ...finished.write,
+      currentGame: gameId,
+      members,
+      events: [{ memberId: actor, type: "member_reconnected" }, ...(finished.write.events ?? [])],
+    });
   }
 
   if (action.type === "end_game") {

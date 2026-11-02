@@ -220,12 +220,23 @@ export function Lobby() {
         postAsMember("/api/room-action", { roomId: id, type: "presence", payload: { connected: false } }, { keepalive: true }).catch(() => {});
       } else {
         act("join").then(() => reload());
+        // A phone that was in the background can send its "away" late, after
+        // this "back". Say "here" again a moment later so it cannot stick.
+        setTimeout(() => {
+          if (alive && document.visibilityState === "visible") act("join");
+        }, 2500);
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
+    // While the room is on screen, keep saying "here" (costs nothing when
+    // already marked here: the server makes no change).
+    const heartbeat = setInterval(() => {
+      if (document.visibilityState === "visible") act("join");
+    }, 20_000);
 
     return () => {
       alive = false;
+      clearInterval(heartbeat);
       document.removeEventListener("visibilitychange", onVisibility);
       db.removeChannel(channel);
     };

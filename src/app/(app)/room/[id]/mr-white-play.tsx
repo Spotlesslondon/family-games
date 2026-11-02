@@ -226,6 +226,19 @@ export function MrWhitePlay({
     <p className="card px-4 py-3 text-center font-bold text-muted">You are out. Watch, and see who wins.</p>
   );
 
+  // ---- 0. Not in this game: watch, with a plain explanation -----------------
+  if (everyone.length > 0 && !everyone.includes(me)) {
+    return (
+      <section className="flex flex-1 flex-col gap-5">
+        <h2 className={big}>You are watching this game</h2>
+        <p className="card px-5 py-5 text-lg">
+          This game started while your phone was away, so you have no word this time. Keep this screen open: you will be in the next game.
+        </p>
+        <ClueBoard state={state} people={people} me={me} />
+      </section>
+    );
+  }
+
   // ---- 1. Everyone looks at their secret ------------------------------------
   if (phase === "reveal") {
     const seen = state.seen ?? [];

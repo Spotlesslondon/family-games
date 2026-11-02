@@ -444,3 +444,25 @@ describe("Mr White: nothing typed outlives the night", () => {
     expect(t.room.state).toEqual({});
   });
 });
+
+describe("Mr White: the host is always in their own game", () => {
+  it("includes a host whose phone was marked away (2 Nov, after sending the link on WhatsApp)", () => {
+    const t = new Table(15, 5);
+    // The host's phone went to WhatsApp: a late "away" lands after they come back.
+    expect(t.act("mum", "presence", { connected: false }).ok).toBe(true);
+    expect(t.room.members.find((m) => m.id === "mum")?.connected).toBe(false);
+    t.start();
+    expect(t.s.order).toContain("mum");
+    expect(t.room.members.find((m) => m.id === "mum")?.connected).toBe(true);
+    // And the host has a secret: a word, or Mr White.
+    expect(t.priv.mum.word !== undefined || t.priv.mum.mrWhite === true).toBe(true);
+    expect(t.act("mum", "seen").ok).toBe(true);
+  });
+  it("still leaves out other players who are away", () => {
+    const t = new Table(16, 5);
+    t.act("kid", "presence", { connected: false });
+    t.start();
+    expect(t.s.order).not.toContain("kid");
+    expect(t.s.order).toHaveLength(4);
+  });
+});
