@@ -97,16 +97,25 @@ export function memberClient(): SupabaseClient {
  * server says the token is no good, renew once and retry.
  */
 export async function postAsMember(path: string, body: unknown, init?: { keepalive?: boolean }): Promise<Response> {
-  const send = (token: string | null) =>
-    fetch(path, {
-      method: "POST",
-      keepalive: init?.keepalive,
-      // A tap that hangs on a bad connection gives up after 12 seconds, so its
-      // button comes back instead of staying greyed out (2 Nov, Vote now).
-      signal: init?.keepalive ? undefined : AbortSignal.timeout(12_000),
-      headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body ?? {}),
-    });
+  const send = async (token: string | null) => {
+    // A tap that hangs on a bad connection gives up after 12 seconds, so its
+    // button comes back instead of staying greyed out (2 Nov, Vote now).
+    // AbortController and setTimeout, not AbortSignal.timeout: that one is
+    // missing on iPhones that stopped at iOS 15, where it would fail every tap.
+    const controller = init?.keepalive ? null : new AbortController();
+    const timer = controller ? setTimeout(() => controller.abort(), 12_000) : null;
+    try {
+      return await fetch(path, {
+        method: "POST",
+        keepalive: init?.keepalive,
+        signal: controller?.signal,
+        headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body ?? {}),
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
   if (init?.keepalive) return send(store.cachedToken());
   const res = await send(await store.token());
   if (res.status !== 401) return res;

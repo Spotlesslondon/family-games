@@ -193,6 +193,7 @@ export function MrWhitePlay({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [peek, setPeek] = useState(false);
+  const [confirmSkip, setConfirmSkip] = useState(false);
   const [guess, setGuess] = useState("");
   const [clue, setClue] = useState("");
   // The vote tapped on this phone, for this round of voting only, shown at once
@@ -214,7 +215,8 @@ export function MrWhitePlay({
     setError(null);
     const out = await act(type, payload);
     setBusy(false);
-    if (out && out.ok === false && out.reason) {
+    if (!out) return false; // offline or timed out: the room screen says so
+    if (out.ok === false && out.reason) {
       setError(message(out.reason));
       return false;
     }
@@ -456,6 +458,24 @@ export function MrWhitePlay({
           <p className="text-xl">Mr White gets one guess at the word most of you have. If it is right, Mr White wins.</p>
         )}
         <ClueBoard state={state} people={people} me={me} />
+        {isHost && !amMrWhite && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              // Two taps, so a slow typer is not cut off by a slip.
+              if (!confirmSkip) {
+                setConfirmSkip(true);
+                return;
+              }
+              setConfirmSkip(false);
+              send("skip_guess");
+            }}
+            className={`${secondary} mt-auto ${confirmSkip ? "btn-danger" : ""}`}
+          >
+            {confirmSkip ? "Tap again: no guess, play on" : "Skip Mr White's guess"}
+          </button>
+        )}
       </section>
     );
   }

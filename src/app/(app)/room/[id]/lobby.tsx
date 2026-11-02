@@ -347,6 +347,12 @@ export function Lobby() {
   }
 
   const isHost = room.host_member_id === session.member.id;
+  // The stand-in's buttons, once the host has been away a minute (room engine standIn).
+  const myStandIn =
+    !isHost &&
+    room.state?.inCharge === session.member.id &&
+    typeof room.state?.inChargeFrom === "string" &&
+    nowMs >= Date.parse(room.state.inChargeFrom as string);
   const here = seats.length; // everyone in the room; anyone away is marked on their avatar
   const people = new Map(seats.map((s) => [s.id, { id: s.id, name: s.name, colour: s.colour, avatar: s.avatar }]));
   const meSeat = seats.find((s) => s.id === session.member.id);
@@ -529,8 +535,13 @@ export function Lobby() {
 
       <div className="mt-auto flex flex-col gap-3">
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
-        {isHost ? (
+        {isHost || myStandIn ? (
           <>
+            {myStandIn && (
+              <p className="card px-4 py-2 text-center font-bold">
+                {people.get(room.host_member_id)?.name ?? "The host"} is away, so you can start the next game.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2" role="group" aria-label="Choose a game">
               {([
                 ["mr-white", "Mr White"],
@@ -605,6 +616,7 @@ export function Lobby() {
             </button>
             {/* Small and apart from Play, with a second tap to confirm: on 2 Nov the
                 big yellow lock button above Play was tapped two seconds before a game. */}
+            {isHost && (
             <div className="mt-2 grid grid-cols-2 gap-3">
               {room.join_code && !room.locked_at ? (
                 <button
@@ -626,6 +638,7 @@ export function Lobby() {
               )}
               <button type="button" onClick={closeRoom} className="btn btn-secondary h-12 px-3 text-sm font-bold">End game night</button>
             </div>
+            )}
           </>
         ) : (
           <>

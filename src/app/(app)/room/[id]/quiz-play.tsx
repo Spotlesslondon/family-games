@@ -62,7 +62,9 @@ export function QuizPlay({
     setError(null);
     const out = await act(type, payload);
     setBusy(false);
-    if (out && out.ok === false) {
+    // Offline or timed out: not sent, so the answer must stay tappable (2 Nov review).
+    if (!out) return false;
+    if (out.ok === false) {
       setError(message(out.reason));
       return false;
     }

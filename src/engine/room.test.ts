@@ -451,10 +451,45 @@ describe("the stand-in while the host's phone is away", () => {
     expect(t.room.state.inCharge).toBeNull();
   });
 
-  it("never applies in the lobby", () => {
+  it("works in the lobby too: a stand-in who ended a game can start the next one", () => {
+    const t = new Table();
+    t.ok("join", "dad");
+    t.ok("start_game", "mum", { gameId: "tap" });
+    t.ok("presence", "mum", { connected: false });
+    t.now = plus(60);
+    t.ok("end_game", "dad");
+    expect(t.room.phase).toBe(LOBBY);
+    expect(t.room.state.inCharge).toBe("dad");
+    t.ok("start_game", "dad", { gameId: "tap" });
+    expect(t.room.state[PARTICIPANTS_KEY]).toEqual(["mum", "dad"]);
+  });
+
+  it("in the lobby, waits the same minute before a stand-in can start a game", () => {
     const t = new Table();
     t.ok("join", "dad");
     t.ok("presence", "mum", { connected: false });
-    expect(t.room.state.inCharge).toBeUndefined();
+    expect(t.rejected("start_game", "dad", { gameId: "tap" })).toBe("host_only");
+    t.now = plus(60);
+    t.ok("start_game", "dad", { gameId: "tap" });
+  });
+});
+
+describe("the stand-in after Play again", () => {
+  it("keeps the host's buttons in the new game without waiting another minute", () => {
+    const t = new Table();
+    t.ok("join", "dad");
+    t.ok("start_game", "mum", { gameId: "tap" });
+    t.ok("presence", "mum", { connected: false });
+    t.now = plus(60);
+    // Play the tiny game to its results.
+    for (let i = 0; i < 3; i++) {
+      t.act("tap", "mum");
+      t.act("tap", "dad");
+    }
+    expect(t.room.phase).toBe(RESULTS);
+    t.ok("start_game", "dad", { gameId: "tap" });
+    expect(t.room.state.inCharge).toBe("dad");
+    expect(t.room.state.inChargeFrom).toBe(plus(60));
+    t.ok("end_game", "dad");
   });
 });

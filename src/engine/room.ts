@@ -70,10 +70,11 @@ export const AWAY_GRACE_SECONDS = 60;
  * host is in charge again and the stand-in's buttons go away.
  */
 export function standIn(room: Pick<RoomSnapshot, "hostId" | "currentGame" | "members" | "state">, players: Player[]): string | null {
-  if (room.currentGame === null) return null;
   if (room.members.find((m) => m.id === room.hostId)?.connected) return null;
+  // In a game, someone playing it; between games (the lobby), anyone in the
+  // room, so a stand-in who ends a game can still start the next one.
   const raw = room.state[PARTICIPANTS_KEY];
-  const inGame = Array.isArray(raw) ? (raw as string[]) : [];
+  const inGame = room.currentGame !== null && Array.isArray(raw) ? (raw as string[]) : room.members.map((m) => m.id);
   const here = inGame.filter((id) => id !== room.hostId && room.members.some((m) => m.id === id && m.connected));
   const adult = (id: string) => {
     const p = players.find((x) => x.id === id);
@@ -176,10 +177,11 @@ function withInCharge(ctx: GameContext, result: TurnResult): TurnResult {
     members: w.members ?? ctx.room.members,
     state: w.state ?? ctx.room.state,
   };
-  const phase = w.phase ?? ctx.room.phase;
-  if (after.currentGame === null || phase === LOBBY) return result;
+  if ((w.status ?? ctx.room.status) === "closed") return result;
   const hostHere = after.members.find((m) => m.id === after.hostId)?.connected === true;
-  const was = after.state[IN_CHARGE_FROM_KEY];
+  // A new game's state starts empty: carry the clock over from the room as it
+  // was, or Play again by a stand-in would restart the minute (found 2 Nov review).
+  const was = after.state[IN_CHARGE_FROM_KEY] ?? ctx.room.state[IN_CHARGE_FROM_KEY];
   // The clock starts when the host's phone goes away and keeps running while it
   // stays away, whoever the stand-in is.
   const from = hostHere ? null : typeof was === "string" ? was : new Date(Date.parse(ctx.now) + AWAY_GRACE_SECONDS * 1000).toISOString();
@@ -288,7 +290,7 @@ function applyRoomActionInner(ctx: GameContext, action: Action): TurnResult {
   }
 
   if (action.type === "start_game") {
-    if (actor !== room.hostId && !(room.phase === RESULTS && mayRun(ctx, actor))) return reject("host_only");
+    if (!mayRun(ctx, actor)) return reject("host_only");
     if (!betweenGames(room.phase)) return reject("game_in_progress");
     const gameId = String(payload.gameId ?? "");
     const game = getGame(gameId);

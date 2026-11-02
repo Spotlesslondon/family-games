@@ -488,3 +488,20 @@ describe("Mr White: the host's phone goes away mid-game (2 Nov)", () => {
     expect(t.room.state.inCharge).toBeNull();
   });
 });
+
+describe("Mr White: his phone has gone when he is caught (2 Nov review)", () => {
+  it("the host can skip the guess and play on; nobody else can", () => {
+    const t = new Table(11, 5);
+    t.start();
+    t.allSee();
+    const mr = t.of("mr_white")[0];
+    t.roundVotingOut(mr);
+    expect(t.room.phase).toBe("guess");
+    const notHost = t.ids().find((id) => id !== "mum" && id !== mr)!;
+    expect(t.act(notHost, "skip_guess")).toEqual({ ok: false, reason: "host_only" });
+    expect(t.act("mum", "skip_guess").ok).toBe(true);
+    expect(t.room.phase).toBe("out");
+    expect(t.s.out[t.s.out.length - 1].guess).toBeUndefined();
+    expect(t.act(mr, "guess", { word: t.villagerWord() }).ok).toBe(false);
+  });
+});

@@ -417,6 +417,18 @@ export const mrWhite: GameModule = {
         return nextRound(ctx, next, "out");
       }
 
+      case "skip_guess": {
+        // Mr White's phone has gone (2 Nov review: nothing could move the game
+        // on). The host, or the stand-in, moves on as if the guess was wrong.
+        if (phase !== "guess") return noop();
+        if (!isHost) return reject("host_only");
+        const caught = s.out[s.out.length - 1];
+        if (!caught || caught.guess !== undefined) return noop();
+        const won = winner(ctx, s);
+        if (won) return finish(ctx, s, won);
+        return nextRound(ctx, s, "out");
+      }
+
       case "next_round": {
         // After someone goes out the host starts the next round of clues.
         if (phase !== "out") return reject("wrong_phase");
