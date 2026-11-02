@@ -21,6 +21,7 @@ import { MrWhitePlay, MrWhiteResults, type MrWhiteMine, type MrWhitePublic } fro
 import { QuizPlay, QuizResults } from "./quiz-play";
 import type { QuizLength, QuizMine, QuizPublic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
+import { Chat } from "./chat";
 import { PlayerAvatar } from "@/components/avatars";
 import { isAvatarKey, type AvatarKey } from "@/lib/avatars";
 import { useNow, useShownAway } from "@/lib/client/away";
@@ -395,7 +396,10 @@ export function Lobby() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
         <div className="flex items-center justify-between">
           <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : "Mr White"}</h1>
-          {hostEnd}
+          <div className="flex items-center gap-3">
+            <Chat roomId={id} me={session.member.id} people={people} />
+            {hostEnd}
+          </div>
         </div>
         {standInLine}
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
@@ -457,7 +461,10 @@ export function Lobby() {
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-12">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-3xl font-semibold">Game night</h1>
-        {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ink">You are host</span>}
+        <div className="flex items-center gap-3">
+          <Chat roomId={id} me={session.member.id} people={people} />
+          {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ink">You are host</span>}
+        </div>
       </div>
 
       {isHost && room.join_code && !room.locked_at ? (
