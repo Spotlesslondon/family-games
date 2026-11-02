@@ -221,12 +221,16 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
     const game = getGame(gameId);
     if (!game) return reject("unknown_game");
 
-    // The host who taps Play is plainly here, even if their phone was marked
-    // away (a late "away" from switching to WhatsApp to send the link left the
-    // host out of their own game on 2 Nov). Everyone else must be present.
+    // Everyone in the room is dealt in, away or not (Joshua, 2 Nov: "When users
+    // are 'away' it doesn't add them to the game"). A phone is marked away the
+    // moment it locks or switches app, which on a remote night is all the time.
+    // Leaving the room removes a seat for good, so a seat means a player. A
+    // phone that wakes up late finds its word or question waiting, and the
+    // host can move on without it (start_clues, show_answers).
+    // The host who taps Play is plainly here, so is marked back.
     const hostWasAway = memberOf(ctx, actor)?.connected === false;
     const members = hostWasAway ? room.members.map((m) => (m.id === actor ? { ...m, connected: true } : m)) : room.members;
-    const ids = members.filter((m) => m.connected).map((m) => m.id);
+    const ids = members.map((m) => m.id);
     if (ids.length < game.minPlayers) return reject("too_few_players");
     if (ids.length > game.maxPlayers) return reject("too_many_players");
 

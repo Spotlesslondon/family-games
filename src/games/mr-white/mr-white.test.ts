@@ -458,11 +458,12 @@ describe("Mr White: the host is always in their own game", () => {
     expect(t.priv.mum.word !== undefined || t.priv.mum.mrWhite === true).toBe(true);
     expect(t.act("mum", "seen").ok).toBe(true);
   });
-  it("still leaves out other players who are away", () => {
+  it("deals in players whose phones are away, so they find their word when they come back", () => {
     const t = new Table(16, 5);
     t.act("kid", "presence", { connected: false });
     t.start();
-    expect(t.s.order).not.toContain("kid");
-    expect(t.s.order).toHaveLength(4);
+    expect(t.s.order).toContain("kid");
+    expect(t.s.order).toHaveLength(5);
+    expect(t.priv.kid.word !== undefined || t.priv.kid.mrWhite === true).toBe(true);
   });
 });

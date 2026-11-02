@@ -211,12 +211,12 @@ describe("removing a player", () => {
 });
 
 describe("starting a game", () => {
-  it("is host only, needs a known game and enough connected players", () => {
+  it("is host only, needs a known game and enough players in the room", () => {
     const t = new Table();
     t.ok("join", "dad");
     expect(t.rejected("start_game", "dad", { gameId: "tap" })).toBe("host_only");
     expect(t.rejected("start_game", "mum", { gameId: "nope" })).toBe("unknown_game");
-    t.ok("presence", "dad", { connected: false });
+    t.ok("leave", "dad");
     expect(t.rejected("start_game", "mum", { gameId: "tap" })).toBe("too_few_players");
   });
 
@@ -241,14 +241,16 @@ describe("starting a game", () => {
     expect(t.events()).toEqual(["game_started"]);
   });
 
-  it("only counts connected members as participants", () => {
+  it("deals in everyone in the room, including phones marked away, but not people who left", () => {
     const t = new Table();
     t.ok("join", "dad");
     t.ok("join", "kid");
+    t.ok("join", "teen");
     t.ok("presence", "kid", { connected: false });
+    t.ok("leave", "teen");
     t.ok("start_game", "mum", { gameId: "tap" });
-    expect(t.room.state[PARTICIPANTS_KEY]).toEqual(["mum", "dad"]);
-    expect(t.rejected("tap", "kid")).toBe("not_a_participant");
+    expect(t.room.state[PARTICIPANTS_KEY]).toEqual(["mum", "dad", "kid"]);
+    expect(t.priv.kid).toEqual({ secret: "s-kid" });
   });
 
   it("cannot start while a game is running", () => {

@@ -335,7 +335,6 @@ export function Lobby() {
 
   const isHost = room.host_member_id === session.member.id;
   const here = seats.length; // everyone in the room; anyone away is marked on their avatar
-  const connectedCount = seats.filter((s) => s.connected).length;
   const people = new Map(seats.map((s) => [s.id, { id: s.id, name: s.name, colour: s.colour, avatar: s.avatar }]));
   const meSeat = seats.find((s) => s.id === session.member.id);
 
@@ -528,7 +527,7 @@ export function Lobby() {
                   onClick={() => setMrWhiteOn((v) => !v)}
                   className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
                 >
-                  <span>Mr White, with no word{connectedCount < 5 ? " (from 5 players)" : ""}</span>
+                  <span>Mr White, with no word{here < 5 ? " (from 5 players)" : ""}</span>
                   <span className={`rounded-full px-3 py-1 text-sm ${mrWhiteOn ? "bg-go text-ink" : "bg-surface-2 text-muted"}`}>{mrWhiteOn ? "On" : "Off"}</span>
                 </button>
                 <button
@@ -558,7 +557,7 @@ export function Lobby() {
             )}
             <button
               type="button"
-              disabled={connectedCount < (game === "quiz" ? 2 : 3)}
+              disabled={here < (game === "quiz" ? 2 : 3)}
               onClick={async () => {
                 const out =
                   game === "quiz"
@@ -569,10 +568,10 @@ export function Lobby() {
               className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
               {game === "quiz"
-                ? connectedCount < 2
+                ? here < 2
                   ? "The quiz needs 2 players"
                   : "Play the quiz"
-                : connectedCount < 3
+                : here < 3
                   ? "Mr White needs 3 players"
                   : "Play Mr White"}
             </button>
