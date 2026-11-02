@@ -80,6 +80,13 @@ export function Lobby() {
   // ever this player's row: the database rules allow nothing else (0004).
   const [mine, setMine] = useState<Record<string, unknown>>({});
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [confirmLock, setConfirmLock] = useState(false);
+  // An armed "Lock the room" disarms itself after a few seconds.
+  useEffect(() => {
+    if (!confirmLock) return;
+    const t = setTimeout(() => setConfirmLock(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmLock]);
   // Mr White settings, for the host: Mr White on and typed clues by default.
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
@@ -379,7 +386,7 @@ export function Lobby() {
         </div>
       ) : isHost ? (
         <div className="flex items-center justify-between gap-3 rounded-3xl bg-surface px-5 py-4">
-          <span className="font-bold">Room locked. The link no longer works.</span>
+          <span className="font-bold">You locked the room. The link no longer works.</span>
           <button type="button" onClick={() => setLock(false)} className="h-11 shrink-0 rounded-full border-2 border-line px-4 font-bold">Open again</button>
         </div>
       ) : (
@@ -423,11 +430,6 @@ export function Lobby() {
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
         {isHost ? (
           <>
-            {room.join_code && !room.locked_at && (
-              <button type="button" onClick={() => setLock(true)} className="h-15 rounded-full bg-go font-display text-xl font-bold text-ground">
-                Everyone is in: lock the room
-              </button>
-            )}
             <div className="flex flex-col gap-2 rounded-3xl bg-surface p-3" role="group" aria-label="Mr White settings">
               <button
                 type="button"
@@ -455,11 +457,33 @@ export function Lobby() {
                 const out = await act("start_game", { gameId: "mr-white", options: { mrWhite: mrWhiteOn, spoken } });
                 if (out && out.ok === false) setActionError(message(out.reason));
               }}
-              className="h-15 rounded-full border-2 border-go font-display text-xl font-bold text-go disabled:border-line disabled:text-muted disabled:opacity-60"
+              className="h-16 rounded-full bg-go font-display text-2xl font-bold text-ground disabled:bg-surface-2 disabled:text-muted"
             >
               {connectedCount < 3 ? "Mr White needs 3 players" : "Play Mr White"}
             </button>
-            <button type="button" onClick={closeRoom} className="h-13 rounded-full border-2 border-line font-bold">End game night</button>
+            {/* Small and apart from Play, with a second tap to confirm: on 2 Nov the
+                big yellow lock button above Play was tapped two seconds before a game. */}
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              {room.join_code && !room.locked_at ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!confirmLock) {
+                      setConfirmLock(true);
+                      return;
+                    }
+                    setConfirmLock(false);
+                    setLock(true);
+                  }}
+                  className={`h-12 rounded-full px-3 text-sm font-bold ${confirmLock ? "bg-alert text-ground" : "border-2 border-line"}`}
+                >
+                  {confirmLock ? "Tap again: nobody else can join" : "Lock the room"}
+                </button>
+              ) : (
+                <span />
+              )}
+              <button type="button" onClick={closeRoom} className="h-12 rounded-full border-2 border-line px-3 text-sm font-bold">End game night</button>
+            </div>
           </>
         ) : (
           <>

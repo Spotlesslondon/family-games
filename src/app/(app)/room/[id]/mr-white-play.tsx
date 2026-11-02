@@ -70,6 +70,22 @@ export function stillHiddenLine(state: MrWhitePublic): string {
   return hiddenLine({ ...settings, wolves, mrWhite: mr });
 }
 
+/** The one-line explanation before the first clue (CEO seat wording, 2 Nov). */
+export function findThemLine(settings?: MrWhitePublic["settings"]): string {
+  const wolves = settings && settings.wolves === 1 ? "The Wolf has a different word." : "The Wolves have a different word.";
+  return settings?.mrWhite
+    ? `Most of you have the same word. ${wolves} Mr White has no word at all. Find them all.`
+    : `Most of you have the same word. ${wolves} Find them all.`;
+}
+
+/** What everyone sees after a vote: the side only, never the word (CEO seat wording, 2 Nov). */
+export function wasLine(side: Side, who: string, isMe: boolean): string {
+  const subject = isMe ? "You were" : `${who} was`;
+  if (side === "wolf") return `${subject} a Wolf.`;
+  if (side === "mr_white") return `${subject} Mr White.`;
+  return `${subject} a Villager. Keep looking.`;
+}
+
 /** Everyone still in the game, in speaking order. */
 export function stillIn(state: MrWhitePublic): string[] {
   const out = new Set((state.out ?? []).map((o) => o.id));
@@ -159,6 +175,12 @@ export function MrWhitePlay({
   const [peek, setPeek] = useState(false);
   const [guess, setGuess] = useState("");
   const [clue, setClue] = useState("");
+  // The vote tapped on this phone, for this round of voting only, shown at once
+  // while the server catches up. A new round or a run-off has a new key.
+  const [tapped, setTapped] = useState<{ key: string; id: string } | null>(null);
+  const voteKey = `${state.round ?? 0}:${state.runoff ? "runoff" : "vote"}`;
+  const pendingVote = tapped && tapped.key === voteKey ? tapped.id : null;
+  const setPendingVote = (id: string | null) => setTapped(id ? { key: voteKey, id } : null);
   const isHost = me === hostId;
   const name = (id?: string) => (id === me ? "You" : (id && people.get(id)?.name) || "Someone");
   const everyone = state.order ?? [];
@@ -166,8 +188,8 @@ export function MrWhitePlay({
   const amOut = !left.includes(me);
   const spoken = !!state.settings?.spoken;
 
-  async function send(type: string, payload?: Record<string, unknown>): Promise<boolean> {
-    if (busy) return false;
+  async function send(type: string, payload?: Record<string, unknown>, evenIfBusy = false): Promise<boolean> {
+    if (busy && !evenIfBusy) return false;
     setBusy(true);
     setError(null);
     const out = await act(type, payload);
@@ -213,6 +235,7 @@ export function MrWhitePlay({
             )}
           </div>
         )}
+        <p className="rounded-2xl bg-surface px-4 py-3 text-center text-lg font-bold">{findThemLine(state.settings)}</p>
         <p className="text-center text-muted">Hidden this game: {hiddenLine(state.settings)}</p>
         <p className="text-center text-muted">{seen.length} of {everyone.length} have looked</p>
         {err}
@@ -321,22 +344,32 @@ export function MrWhitePlay({
   if (phase === "vote") {
     const voted = state.voted ?? [];
     const choices = (state.candidates ?? left).filter((id) => id !== me);
-    const my = mine.vote ?? null;
+    // The tapped name lights up at once; the server confirms it a moment later.
+    const my = pendingVote ?? mine.vote ?? null;
     return (
       <section className="flex flex-1 flex-col gap-4">
         {outBanner || <MySecret mine={mine} />}
-        <h2 className={big}>{state.runoff ? "It's a tie. Vote again" : "Who has a different word?"}</h2>
+        <h2 className={big}>{state.runoff ? "It's a tie. Vote again" : "Who is hiding?"}</h2>
         {!amOut && (
           <>
-            <p className="text-muted">{my ? `You voted for ${name(my)}. You can change it until everyone has voted.` : "Vote for who you think has a different word, or no word. Nobody sees your vote until the count."}</p>
+            <p className="text-lg">Vote for who you think has a different word, or no word at all.</p>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full bg-surface px-3 py-1.5 text-sm font-bold">Wolf: a different word.</span>
+              {state.settings?.mrWhite && <span className="rounded-full bg-surface px-3 py-1.5 text-sm font-bold">Mr White: no word.</span>}
+            </div>
+            <p className="text-muted">{my ? `You voted for ${name(my)}. You can change it until everyone has voted.` : "Nobody sees your vote until the count."}</p>
             <ul className="grid grid-cols-2 gap-3">
               {choices.map((id) => (
                 <li key={id}>
                   <button
                     type="button"
-                    disabled={busy}
                     aria-pressed={my === id}
-                    onClick={() => send("vote", { memberId: id })}
+                    onClick={async () => {
+                      if (my === id) return;
+                      setPendingVote(id);
+                      const ok = await send("vote", { memberId: id }, true);
+                      if (!ok) setPendingVote(null);
+                    }}
                     className={`flex w-full flex-col items-center gap-2 rounded-3xl border-4 px-3 py-4 ${my === id ? "border-go bg-surface-2" : "border-transparent bg-surface"}`}
                   >
                     <Avatar p={people.get(id)} />
@@ -363,7 +396,7 @@ export function MrWhitePlay({
     const amMrWhite = caught?.id === me;
     return (
       <section className="flex flex-1 flex-col gap-5">
-        <h2 className={big}>{amMrWhite ? "You were caught!" : `${name(caught?.id)} is Mr White!`}</h2>
+        <h2 className={big}>{amMrWhite ? "You were caught!" : "Mr White is out. One guess to win it all."}</h2>
         {amMrWhite ? (
           <form
             onSubmit={(e) => {
@@ -402,8 +435,7 @@ export function MrWhitePlay({
         {gone ? (
           <div className="flex flex-col items-center gap-3 rounded-3xl bg-surface px-5 py-7 text-center">
             <Avatar p={people.get(gone.id)} size="h-20 w-20 text-4xl" />
-            <h2 className={big}>{gone.id === me ? "You are out" : `${name(gone.id)} is out`}</h2>
-            <p className="font-display text-2xl font-bold text-go">{gone.id === me ? "You were" : "They were"} {SIDE_NAME[gone.side]}</p>
+            <h2 className={big}>{wasLine(gone.side, name(gone.id), gone.id === me)}</h2>
             {gone.guess !== undefined && <p className="text-lg">Mr White guessed &ldquo;{gone.guess}&rdquo;. Wrong!</p>}
           </div>
         ) : (

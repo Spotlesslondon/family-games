@@ -9,7 +9,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { avatarColour, initial, loadSession, memberClient } from "@/lib/client/session";
-import { SIDE_NAME, hiddenLine, stillHiddenLine, stillIn, type MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
+import { SIDE_NAME, findThemLine, hiddenLine, stillHiddenLine, stillIn, wasLine, type MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
 
 interface RoomRow {
   code: string;
@@ -256,6 +256,7 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
     body = (
       <>
         <h1 className={headline}>Check your secret word</h1>
+        <p className="text-[clamp(1.4rem,3vw,3rem)] font-bold">{findThemLine(state.settings)}</p>
         <p className={sub}>Keep your phone hidden. Hidden this game: {hiddenLine(state.settings)}.</p>
         <p className={sub}>{(state.seen ?? []).length} of {order.length} have looked</p>
       </>
@@ -292,7 +293,7 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
   } else if (phase === "vote") {
     body = (
       <>
-        <h1 className={headline}>{state.runoff ? "A tie! Vote again" : "Who has a different word?"}</h1>
+        <h1 className={headline}>{state.runoff ? "A tie! Vote again" : state.settings?.mrWhite ? "Vote now. Find Mr White and the Wolves." : "Vote now. Find the Wolves."}</h1>
         <p className={sub}>Vote on your phone. {(state.voted ?? []).length} of {left.length} have voted.</p>
         {board}
       </>
@@ -302,7 +303,7 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
     body = (
       <>
         {face(caught?.id)}
-        <h1 className={headline}>{name(caught?.id)} is Mr White!</h1>
+        <h1 className={headline}>Mr White is out. One guess to win it all.</h1>
         <p className={sub}>One guess at the word to win...</p>
       </>
     );
@@ -311,8 +312,7 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
     body = gone ? (
       <>
         {face(gone.id)}
-        <h1 className={headline}>{name(gone.id)} is out</h1>
-        <p className="font-display text-[clamp(2rem,4.5vw,4.5rem)] font-bold text-go">They were {SIDE_NAME[gone.side]}</p>
+        <h1 className={headline}>{wasLine(gone.side, name(gone.id), false)}</h1>
         {gone.guess !== undefined && <p className={sub}>Mr White guessed &ldquo;{gone.guess}&rdquo;. Wrong!</p>}
         <p className={sub}>Still hidden: {stillHiddenLine(state)}</p>
       </>

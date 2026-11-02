@@ -278,9 +278,15 @@ export async function setLocked(accessToken: string, roomId: unknown, locked: bo
   if (!room || room.family_id !== who.family_id || room.status !== "open") throw new AuthError("room_not_found", 404);
   if (room.host_member_id !== who.id) throw new AuthError("host_only", 403);
 
+  // Every lock and unlock goes in the night's history with who did it, so a
+  // room that "locked by itself" can be traced (table test, 2 Nov).
+  const record = (event_type: string) =>
+    db.from("game_events").insert({ family_id: room.family_id, room_id: roomId, member_id: who.id, event_type });
+
   if (locked) {
     const { error } = await db.from("rooms").update({ locked_at: new Date().toISOString() }).eq("id", roomId);
     if (error) throw new AuthError("server_busy", 503, { reason: error.message });
+    await record("room_locked");
     return { locked: true, join_code: room.join_code as string | null };
   }
   // Opening again: the old code may have been taken by another night while
@@ -288,7 +294,10 @@ export async function setLocked(accessToken: string, roomId: unknown, locked: bo
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = attempt === 0 && room.join_code ? (room.join_code as string) : joinCode();
     const { error } = await db.from("rooms").update({ locked_at: null, join_code: code }).eq("id", roomId);
-    if (!error) return { locked: false, join_code: code };
+    if (!error) {
+      await record("room_unlocked");
+      return { locked: false, join_code: code };
+    }
     if (error.code !== "23505") throw new AuthError("server_busy", 503, { reason: error.message });
   }
   throw new AuthError("busy_try_again", 409);
