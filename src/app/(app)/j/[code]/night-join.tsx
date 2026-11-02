@@ -164,7 +164,7 @@ export function NightJoin() {
           <label className="flex flex-col gap-2">
             <span className="font-bold">Your first name</span>
             <input
-              className="card h-16 border-2 border-surface-2 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
+              className="card h-16 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
               value={name}
               onChange={(e) => setName(e.target.value.slice(0, 40))}
               autoComplete="given-name"
@@ -182,7 +182,7 @@ export function NightJoin() {
                   type="button"
                   aria-pressed={band === b.value}
                   onClick={() => setBand(b.value)}
-                  className={`h-14 rounded-2xl border-2 font-bold ${band === b.value ? "border-pick bg-go text-ink" : "border-surface-2 bg-surface"}`}
+                  className={`h-14 rounded-md border-[3px] font-bold ${band === b.value ? "border-pick bg-go text-ink" : "border-ink bg-surface"}`}
                 >
                   {b.label}
                 </button>
@@ -214,7 +214,7 @@ export function NightJoin() {
               type="button"
               disabled={p.taken || busy}
               onClick={() => claim({ memberId: p.id })}
-              className="card flex flex-col items-center gap-3 border-2 border-surface-2 px-3 py-5 disabled:opacity-50"
+              className="card flex flex-col items-center gap-3 px-3 py-5 disabled:opacity-50"
             >
               {p.avatar ? (
                 <PlayerAvatar avatar={p.avatar} className="h-20 w-auto" label={p.name} />
@@ -239,7 +239,7 @@ export function NightJoin() {
       >
         {night.people.length > 0 ? "I'm not on the list" : "Join with my name"}
       </button>
-      <div className="mt-auto flex flex-col gap-2 border-t-2 border-surface-2 pt-5">
+      <div className="mt-auto flex flex-col gap-2 border-t-[3px] border-ink pt-5">
         <p className="text-muted">Is this the TV or a laptop by the TV?</p>
         <button
           type="button"

@@ -150,7 +150,8 @@ export function isIdle(lastActivityAt: string | null | undefined, now = Date.now
 export async function closeIdle(roomId: string): Promise<void> {
   await serviceClient()
     .from("rooms")
-    .update({ status: "closed", closed_at: new Date().toISOString() })
+    // The idle close wipes the game too: typed clues never outlive the night.
+    .update({ status: "closed", closed_at: new Date().toISOString(), state: {}, current_game: null, phase: "lobby", phase_ends_at: null })
     .eq("id", roomId)
     .eq("status", "open");
 }

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { forgetSession, message } from "@/lib/client/session";
 
-const field = "h-14 rounded-2xl border-2 border-surface-2 bg-surface px-4 text-lg text-ink outline-none focus:border-pick";
+const field = "h-14 rounded-md border-[3px] border-ink bg-surface px-4 text-lg text-ink outline-none focus:border-pick";
 
 export default function StartFamily() {
   const router = useRouter();

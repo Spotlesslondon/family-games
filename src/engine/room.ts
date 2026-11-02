@@ -19,6 +19,10 @@ import {
   type TurnWrite,
 } from "./types";
 
+
+/** What a closed room keeps of its game: nothing (no clues, guesses or words). */
+const WIPE_GAME = { currentGame: null, phase: "lobby", phaseEndsAt: null, state: {} } satisfies Partial<TurnWrite>;
+
 export const LOBBY = "lobby";
 export const RESULTS = "results";
 
@@ -157,6 +161,7 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
     const remaining = room.members.filter((m) => m.id !== actor);
     if (remaining.length === 0) {
       return accept({
+        ...WIPE_GAME,
         members: remaining,
         status: "closed",
         events: [{ memberId: actor, type: "member_left" }, { type: "room_closed" }],
@@ -205,7 +210,8 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
 
   if (action.type === "close_room") {
     if (actor !== room.hostId) return reject("host_only");
-    return accept({ status: "closed", events: [{ memberId: actor, type: "room_closed" }] });
+    // Closing wipes the game: typed clues and guesses never outlive the night.
+    return accept({ ...WIPE_GAME, status: "closed", events: [{ memberId: actor, type: "room_closed" }] });
   }
 
   if (action.type === "start_game") {

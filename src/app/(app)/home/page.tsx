@@ -19,7 +19,7 @@ interface SavedList {
   size: number;
 }
 
-const field = "h-13 rounded-2xl border-2 border-surface-2 bg-ground px-4 text-lg text-ink outline-none focus:border-pick";
+const field = "h-13 rounded-md border-[3px] border-ink bg-ground px-4 text-lg text-ink outline-none focus:border-pick";
 
 export default function Home() {
   const router = useRouter();
@@ -180,7 +180,7 @@ export default function Home() {
           type="button"
           disabled={roomBusy}
           onClick={() => enterRoom("/api/rooms/join")}
-          className="flex items-center justify-between rounded-3xl bg-go px-5 py-4 text-left text-ink disabled:opacity-60"
+          className="btn btn-primary justify-between px-5 py-4 text-left"
         >
           <span className="flex flex-col">
             <span className="font-display text-2xl font-bold">Game night is on</span>

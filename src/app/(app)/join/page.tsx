@@ -124,7 +124,7 @@ export default function Join() {
               key={m.id}
               type="button"
               onClick={() => setChosen({ member: m, colour: avatarColour(m.id) })}
-              className="card flex flex-col items-center gap-3 border-2 border-surface-2 px-3 py-5"
+              className="card flex flex-col items-center gap-3 px-3 py-5"
             >
               <span className="flex h-18 w-18 items-center justify-center rounded-full font-display text-3xl font-bold text-ink" style={{ background: avatarColour(m.id) }}>
                 {initial(m.name)}
@@ -146,7 +146,7 @@ export default function Join() {
         <label className="flex flex-col gap-2">
           <span className="font-bold">Code</span>
           <input
-            className="card h-16 border-2 border-surface-2 px-4 text-center font-display text-3xl font-bold uppercase tracking-[0.3em] text-ink outline-none focus:border-pick"
+            className="card h-16 px-4 text-center font-display text-3xl font-bold uppercase tracking-[0.3em] text-ink outline-none focus:border-pick"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
             autoCapitalize="characters"

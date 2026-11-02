@@ -421,3 +421,26 @@ describe("Mr White: word checks", () => {
     for (const [a, b] of MR_WHITE_PAIRS) expect(sameWord(a, b)).toBe(false);
   });
 });
+
+describe("Mr White: nothing typed outlives the night", () => {
+  it("closing the night mid-game wipes the clues and the game", () => {
+    const t = new Table(14, 5);
+    t.start();
+    t.allSee();
+    t.typedRound();
+    expect(t.s.clues.length).toBeGreaterThan(0);
+    expect(t.act("mum", "close_room").ok).toBe(true);
+    expect(t.room.status).toBe("closed");
+    expect(t.room.state).toEqual({});
+    expect(t.room.currentGame).toBeNull();
+  });
+  it("closing on the results screen wipes the words and guesses", () => {
+    const t = new Table(13, 3);
+    t.start();
+    t.allSee();
+    t.roundVotingOut(t.of("wolf")[0]);
+    expect(t.room.phase).toBe(RESULTS);
+    expect(t.act("mum", "close_room").ok).toBe(true);
+    expect(t.room.state).toEqual({});
+  });
+});

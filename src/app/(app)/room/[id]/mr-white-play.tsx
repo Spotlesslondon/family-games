@@ -290,7 +290,7 @@ export function MrWhitePlay({
           >
             <p className="text-lg">{mine.mrWhite ? "Type one word that fits the others' clues. Bluff!" : "Type one word that fits your secret word. Not the word itself."}</p>
             <input
-              className="card h-16 border-2 border-surface-2 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
+              className="card h-16 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
               value={clue}
               onChange={(e) => setClue(e.target.value.slice(0, 20))}
               autoCapitalize="none"
@@ -428,7 +428,7 @@ export function MrWhitePlay({
           >
             <p className="text-lg">Guess the word most players have, to win on your own. One go.</p>
             <input
-              className="card h-16 border-2 border-surface-2 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
+              className="card h-16 px-4 font-display text-2xl font-bold outline-none focus:border-pick"
               value={guess}
               onChange={(e) => setGuess(e.target.value.slice(0, 40))}
               autoCapitalize="none"

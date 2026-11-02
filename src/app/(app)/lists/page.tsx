@@ -28,7 +28,7 @@ const BANDS: { value: string; label: string }[] = [
   { value: "16+", label: "16 or over" },
 ];
 
-const field = "h-13 rounded-2xl border-2 border-surface-2 bg-ground px-4 text-lg text-ink outline-none focus:border-pick";
+const field = "h-13 rounded-md border-[3px] border-ink bg-ground px-4 text-lg text-ink outline-none focus:border-pick";
 
 async function send(body: Record<string, unknown>): Promise<{ ok: boolean; error?: string; [k: string]: unknown }> {
   const res = await postAsMember("/api/lists", body).catch(() => null);
@@ -214,7 +214,7 @@ export default function Lists() {
             </ul>
           )}
           {adding === list.id ? (
-            <form onSubmit={(e) => addSomeone(e, list.id)} className="flex flex-col gap-3 border-t-2 border-surface-2 pt-4">
+            <form onSubmit={(e) => addSomeone(e, list.id)} className="flex flex-col gap-3 border-t-[3px] border-ink pt-4">
               <label className="flex flex-col gap-1.5">
                 <span className="font-bold">First name</span>
                 <input className={field} value={newName} onChange={(e) => setNewName(e.target.value.slice(0, 40))} autoCapitalize="words" required />
@@ -228,7 +228,7 @@ export default function Lists() {
                       type="button"
                       aria-pressed={newBand === b.value}
                       onClick={() => setNewBand(b.value)}
-                      className={`h-12 rounded-2xl border-2 font-bold ${newBand === b.value ? "border-pick bg-go text-ink" : "border-surface-2 bg-ground"}`}
+                      className={`h-12 rounded-md border-[3px] font-bold ${newBand === b.value ? "border-pick bg-go text-ink" : "border-ink bg-surface"}`}
                     >
                       {b.label}
                     </button>
@@ -259,7 +259,7 @@ export default function Lists() {
         </section>
       ))}
 
-      <form onSubmit={create} className="flex flex-col gap-3 rounded-3xl border-2 border-dashed border-line p-5">
+      <form onSubmit={create} className="flex flex-col gap-3 rounded-md border-[3px] border-dashed border-ink p-5">
         <label className="flex flex-col gap-1.5">
           <span className="font-display text-xl font-semibold">New list</span>
           <input className={field} value={newList} onChange={(e) => setNewList(e.target.value.slice(0, 40))} placeholder="Siblings" required />

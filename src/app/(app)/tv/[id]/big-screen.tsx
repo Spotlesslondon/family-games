@@ -175,13 +175,13 @@ export function BigScreen() {
       </header>
 
       {open ? (
-        <section className="flex flex-col items-center gap-3 rounded-[2rem] bg-surface px-8 py-[4vh] text-center">
+        <section className="card flex flex-col items-center gap-3 px-8 py-[4vh] text-center">
           <span className="text-[clamp(1.1rem,2.2vw,2.2rem)] font-bold text-muted">Join on your phone: ashergames.com/j/</span>
           <span className="font-display text-[clamp(4rem,14vw,12rem)] font-bold leading-none tracking-[0.12em] text-ink">{room?.join_code}</span>
           <span className="text-[clamp(1rem,1.8vw,1.8rem)] text-muted">or tap the link the host sent to your group chat</span>
         </section>
       ) : (
-        <section className="rounded-[2rem] bg-surface px-8 py-[3vh] text-center text-[clamp(1.4rem,3vw,3rem)] font-bold">Everyone is in. The room is locked.</section>
+        <section className="card px-8 py-[3vh] text-center text-[clamp(1.4rem,3vw,3rem)] font-bold">Everyone is in. The room is locked.</section>
       )}
 
       <section className="flex flex-col gap-6">
@@ -244,7 +244,7 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
         const side = outSide.get(id);
         const theirs = (state.clues ?? []).filter((c) => c.id === id);
         return (
-          <li key={id} className={`flex items-center gap-[1.2vw] rounded-[1.5rem] px-[1.2vw] py-[1vh] text-left ${id === speaker ? "bg-surface-2 ring-4 ring-go" : "bg-surface"} ${side ? "opacity-50" : ""}`}>
+          <li key={id} className={`flex items-center gap-[1.2vw] rounded-md border-4 border-ink px-[1.2vw] py-[1vh] text-left shadow-[4px_4px_0_#111] ${id === speaker ? "bg-go" : "bg-surface"} ${side ? "opacity-50" : ""}`}>
             <TvFace person={people.find((p) => p.id === id)} size="clamp(3rem,5vw,5rem)" />
             <div className="flex min-w-0 flex-col">
               <span className="text-[clamp(1rem,1.6vw,1.6rem)] font-bold text-muted">
