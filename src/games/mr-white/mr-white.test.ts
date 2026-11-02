@@ -467,3 +467,20 @@ describe("Mr White: the host is always in their own game", () => {
     expect(t.priv.kid.word !== undefined || t.priv.kid.mrWhite === true).toBe(true);
   });
 });
+
+describe("Mr White: the host's phone goes away mid-game (2 Nov)", () => {
+  it("an adult still at the table can press Vote now, and the host gets it back on return", () => {
+    const t = new Table(21, 5);
+    t.start();
+    t.allSee();
+    t.typedRound();
+    expect(t.room.phase).toBe("between");
+    t.act("mum", "presence", { connected: false });
+    expect(t.room.state.inCharge).toBe("nan");
+    expect(t.act("kid", "start_vote")).toEqual({ ok: false, reason: "host_only" });
+    expect(t.act("nan", "start_vote").ok).toBe(true);
+    expect(t.room.phase).toBe("vote");
+    t.act("mum", "presence", { connected: true });
+    expect(t.room.state.inCharge).toBeNull();
+  });
+});

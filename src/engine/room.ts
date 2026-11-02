@@ -15,6 +15,7 @@ import {
   type GameModule,
   type Player,
   type RoomMember,
+  type RoomSnapshot,
   type TurnResult,
   type TurnWrite,
 } from "./types";
@@ -44,7 +45,37 @@ function playerOf(ctx: GameContext, id: string): Player | undefined {
 
 function isAdult(ctx: GameContext, id: string): boolean {
   const p = playerOf(ctx, id);
-  return p?.role === "owner" || p?.role === "adult";
+  return p?.role === "owner" || p?.role === "adult" || p?.ageBand === "16+";
+}
+
+/** Shared state key: who presses the host's buttons while the host's phone is away. */
+export const IN_CHARGE_KEY = "inCharge";
+
+/**
+ * While a game is on (or its results are showing) and the host's phone is
+ * away, someone else must be able to move it on: Vote now, Next question,
+ * Play again (Joshua, 2 Nov: "it should have assigned someone else as person
+ * in charge"). The stand-in is the first player in the game whose phone is
+ * here, adults first. Being out of the game does not matter: an adult who has
+ * been voted out can still press Vote now. When the host's phone is back, the
+ * host is in charge again and the stand-in's buttons go away.
+ */
+export function standIn(room: Pick<RoomSnapshot, "hostId" | "currentGame" | "members" | "state">, players: Player[]): string | null {
+  if (room.currentGame === null) return null;
+  if (room.members.find((m) => m.id === room.hostId)?.connected) return null;
+  const raw = room.state[PARTICIPANTS_KEY];
+  const inGame = Array.isArray(raw) ? (raw as string[]) : [];
+  const here = inGame.filter((id) => id !== room.hostId && room.members.some((m) => m.id === id && m.connected));
+  const adult = (id: string) => {
+    const p = players.find((x) => x.id === id);
+    return p?.role === "owner" || p?.role === "adult" || p?.ageBand === "16+";
+  };
+  return here.find(adult) ?? here[0] ?? null;
+}
+
+/** The host, or the stand-in while the host's phone is away. */
+function mayRun(ctx: GameContext, actor: string): boolean {
+  return actor === ctx.room.hostId || actor === standIn(ctx.room, ctx.players);
 }
 
 function participants(ctx: GameContext): string[] {
@@ -116,6 +147,31 @@ function finishGameWrite(
 }
 
 export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
+  return withInCharge(ctx, applyRoomActionInner(ctx, action));
+}
+
+/**
+ * Keeps the shared state's "inCharge" up to date after every change, so every
+ * phone knows who has the host's buttons right now. Presence changes count:
+ * the host's phone going away hands the buttons over at once.
+ */
+function withInCharge(ctx: GameContext, result: TurnResult): TurnResult {
+  if (!result.ok || result.noop) return result;
+  const w = result.write;
+  const after = {
+    hostId: w.hostId ?? ctx.room.hostId,
+    currentGame: w.currentGame !== undefined ? w.currentGame : ctx.room.currentGame,
+    members: w.members ?? ctx.room.members,
+    state: w.state ?? ctx.room.state,
+  };
+  const phase = w.phase ?? ctx.room.phase;
+  if (after.currentGame === null || phase === LOBBY) return result;
+  const who = standIn(after, ctx.players);
+  if ((after.state[IN_CHARGE_KEY] ?? null) === who) return result;
+  return { ...result, write: { ...w, state: { ...after.state, [IN_CHARGE_KEY]: who } } };
+}
+
+function applyRoomActionInner(ctx: GameContext, action: Action): TurnResult {
   const { room } = ctx;
   if (room.status === "closed") return reject("room_closed");
 
@@ -215,7 +271,7 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
   }
 
   if (action.type === "start_game") {
-    if (actor !== room.hostId) return reject("host_only");
+    if (actor !== room.hostId && !(room.phase === RESULTS && mayRun(ctx, actor))) return reject("host_only");
     if (!betweenGames(room.phase)) return reject("game_in_progress");
     const gameId = String(payload.gameId ?? "");
     const game = getGame(gameId);
@@ -261,7 +317,7 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
   }
 
   if (action.type === "end_game") {
-    if (actor !== room.hostId) return reject("host_only");
+    if (!mayRun(ctx, actor)) return reject("host_only");
     if (room.currentGame === null || betweenGames(room.phase)) return reject("no_game_running");
     return accept({
       currentGame: null,
@@ -273,7 +329,7 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
   }
 
   if (action.type === "back_to_lobby") {
-    if (actor !== room.hostId) return reject("host_only");
+    if (!mayRun(ctx, actor)) return reject("host_only");
     if (room.phase !== RESULTS) return reject("not_in_results");
     return accept({ currentGame: null, phase: LOBBY, phaseEndsAt: null, state: {} });
   }
@@ -297,7 +353,10 @@ export function applyRoomAction(ctx: GameContext, action: Action): TurnResult {
   if (!participants(ctx).includes(actor)) return reject("not_a_participant");
   const game = getGame(room.currentGame);
   if (!game) return reject("unknown_game");
-  return finishGameWrite(ctx, game, game.reduce(gameContext(ctx), action));
+  // The stand-in acts with the host's say for this one action: the game module
+  // checks "is this the host?" and needs no change of its own.
+  const asHost = actor !== room.hostId && mayRun(ctx, actor) ? { ...ctx, room: { ...room, hostId: actor } } : ctx;
+  return finishGameWrite(ctx, game, game.reduce(gameContext(asHost), action));
 }
 
 /** Prefer a connected adult, then any connected member, then anyone left. */

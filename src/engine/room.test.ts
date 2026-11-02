@@ -408,3 +408,46 @@ describe("closing", () => {
     expect(t.rejected("tap", "mum")).toBe("room_closed");
   });
 });
+
+describe("the stand-in while the host's phone is away", () => {
+  it("hands the host's buttons to a connected adult in the game, and back when the host returns", () => {
+    const t = new Table();
+    t.ok("join", "kid");
+    t.ok("join", "dad");
+    t.ok("start_game", "mum", { gameId: "tap" });
+    expect(t.room.state.inCharge ?? null).toBeNull();
+    t.ok("presence", "mum", { connected: false });
+    // Dad, not Kid: adults first, even though Kid joined first.
+    expect(t.room.state.inCharge).toBe("dad");
+    expect(t.rejected("end_game", "kid")).toBe("host_only");
+    t.ok("presence", "mum", { connected: true });
+    expect(t.room.state.inCharge).toBeNull();
+    expect(t.rejected("end_game", "dad")).toBe("host_only");
+  });
+
+  it("lets the stand-in end the game while the host is away", () => {
+    const t = new Table();
+    t.ok("join", "dad");
+    t.ok("start_game", "mum", { gameId: "tap" });
+    t.ok("presence", "mum", { connected: false });
+    t.ok("end_game", "dad");
+    expect(t.room.phase).toBe(LOBBY);
+  });
+
+  it("falls back to a child when no adult's phone is here, and to nobody when no phone is", () => {
+    const t = new Table();
+    t.ok("join", "kid");
+    t.ok("start_game", "mum", { gameId: "tap" });
+    t.ok("presence", "mum", { connected: false });
+    expect(t.room.state.inCharge).toBe("kid");
+    t.ok("presence", "kid", { connected: false });
+    expect(t.room.state.inCharge).toBeNull();
+  });
+
+  it("never applies in the lobby", () => {
+    const t = new Table();
+    t.ok("join", "dad");
+    t.ok("presence", "mum", { connected: false });
+    expect(t.room.state.inCharge).toBeUndefined();
+  });
+});

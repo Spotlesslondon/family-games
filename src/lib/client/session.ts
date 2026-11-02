@@ -101,6 +101,9 @@ export async function postAsMember(path: string, body: unknown, init?: { keepali
     fetch(path, {
       method: "POST",
       keepalive: init?.keepalive,
+      // A tap that hangs on a bad connection gives up after 12 seconds, so its
+      // button comes back instead of staying greyed out (2 Nov, Vote now).
+      signal: init?.keepalive ? undefined : AbortSignal.timeout(12_000),
       headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body ?? {}),
     });

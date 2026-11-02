@@ -351,7 +351,19 @@ export function Lobby() {
   // A game is running, or has just finished: the game's own screens take over.
   if ((room.current_game === "mr-white" || room.current_game === "quiz") && room.phase !== "lobby") {
     const isQuiz = room.current_game === "quiz";
-    const hostEnd = isHost && room.phase !== "results" && (
+    // While the host's phone is away, the stand-in gets the host's buttons
+    // (the server checks the same rule, room engine standIn).
+    const inCharge = typeof room.state?.inCharge === "string" ? (room.state.inCharge as string) : null;
+    const controlId = inCharge === session.member.id ? session.member.id : room.host_member_id;
+    const hostName = people.get(room.host_member_id)?.name ?? "the host";
+    const standInLine = inCharge && (
+      <p className="card px-4 py-2 text-center font-bold">
+        {inCharge === session.member.id
+          ? `${hostName} is away, so you have the host's buttons for now.`
+          : `${hostName} is away. ${people.get(inCharge)?.name ?? "Someone"} has the host's buttons for now.`}
+      </p>
+    );
+    const hostEnd = (isHost || inCharge === session.member.id) && room.phase !== "results" && (
       <button
         type="button"
         onClick={() => {
@@ -374,30 +386,31 @@ export function Lobby() {
           <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : "Mr White"}</h1>
           {hostEnd}
         </div>
+        {standInLine}
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
         {isQuiz ? (
           room.phase === "results" ? (
-            <QuizResults state={room.state as unknown as QuizPublic} me={session.member.id} hostId={room.host_member_id} people={people} act={act} />
+            <QuizResults state={room.state as unknown as QuizPublic} me={session.member.id} hostId={controlId} people={people} act={act} />
           ) : (
             <QuizPlay
               phase={room.phase}
               state={room.state as unknown as QuizPublic}
               mine={mine as unknown as QuizMine}
               me={session.member.id}
-              hostId={room.host_member_id}
+              hostId={controlId}
               people={people}
               act={act}
             />
           )
         ) : room.phase === "results" ? (
-          <MrWhiteResults state={room.state as MrWhitePublic} me={session.member.id} hostId={room.host_member_id} people={people} act={act} />
+          <MrWhiteResults state={room.state as MrWhitePublic} me={session.member.id} hostId={controlId} people={people} act={act} />
         ) : (
           <MrWhitePlay
             phase={room.phase}
             state={room.state as MrWhitePublic}
             mine={mine as MrWhiteMine}
             me={session.member.id}
-            hostId={room.host_member_id}
+            hostId={controlId}
             people={people}
             act={act}
           />
