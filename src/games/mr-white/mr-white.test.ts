@@ -37,8 +37,10 @@ class Table {
     };
   }
 
+  now = "2026-11-01T21:00:00.000Z";
+
   act(actorId: string, type: string, payload?: Record<string, unknown>) {
-    const ctx: GameContext = { room: this.room, players: everyone, private: this.priv, now: "2026-11-01T21:00:00.000Z", rng: this.rng };
+    const ctx: GameContext = { room: this.room, players: everyone, private: this.priv, now: this.now, rng: this.rng };
     const r = applyRoomAction(ctx, { type, actorId, payload });
     if (r.ok && !r.noop) {
       this.room = applyWrite(this.room, r.write);
@@ -477,6 +479,8 @@ describe("Mr White: the host's phone goes away mid-game (2 Nov)", () => {
     expect(t.room.phase).toBe("between");
     t.act("mum", "presence", { connected: false });
     expect(t.room.state.inCharge).toBe("nan");
+    expect(t.act("nan", "start_vote")).toEqual({ ok: false, reason: "host_only" });
+    t.now = "2026-11-01T21:01:00.000Z";
     expect(t.act("kid", "start_vote")).toEqual({ ok: false, reason: "host_only" });
     expect(t.act("nan", "start_vote").ok).toBe(true);
     expect(t.room.phase).toBe("vote");

@@ -23,6 +23,7 @@ import type { QuizLength, QuizMine, QuizPublic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
 import { PlayerAvatar } from "@/components/avatars";
 import { isAvatarKey, type AvatarKey } from "@/lib/avatars";
+import { useNow, useShownAway } from "@/lib/client/away";
 
 interface RoomRow {
   id: string;
@@ -173,6 +174,8 @@ export function Lobby() {
   useEffect(() => {
     reloadRef.current = () => void reload();
   }, [reload]);
+  const nowMs = useNow(3000);
+  const shownAway = useShownAway(seats);
 
   useEffect(() => {
     let cancelled = false;
@@ -353,7 +356,9 @@ export function Lobby() {
     const isQuiz = room.current_game === "quiz";
     // While the host's phone is away, the stand-in gets the host's buttons
     // (the server checks the same rule, room engine standIn).
-    const inCharge = typeof room.state?.inCharge === "string" ? (room.state.inCharge as string) : null;
+    // Only once the host has been away a whole minute, the same rule the server applies.
+    const inChargeFrom = typeof room.state?.inChargeFrom === "string" ? Date.parse(room.state.inChargeFrom as string) : NaN;
+    const inCharge = typeof room.state?.inCharge === "string" && nowMs >= inChargeFrom ? (room.state.inCharge as string) : null;
     const controlId = inCharge === session.member.id ? session.member.id : room.host_member_id;
     const hostName = people.get(room.host_member_id)?.name ?? "the host";
     const standInLine = inCharge && (
@@ -491,22 +496,22 @@ export function Lobby() {
                   disabled={s.id !== session.member.id || room.phase !== "lobby"}
                   onClick={() => setPicking(true)}
                   aria-label={s.id === session.member.id ? "Change my character" : s.name}
-                  className={s.connected ? "" : "opacity-40"}
+                  className={!shownAway.has(s.id) ? "" : "opacity-40"}
                 >
-                  <PlayerAvatar avatar={s.avatar} className="h-20 w-auto" label={s.name} wobble={s.connected} />
+                  <PlayerAvatar avatar={s.avatar} className="h-20 w-auto" label={s.name} wobble={!shownAway.has(s.id)} />
                 </button>
               ) : (
                 <span
-                  className={`flex h-16 w-16 items-center justify-center rounded-full border-4 border-ink font-display text-2xl ${s.connected ? "text-ink" : "border-dashed bg-surface-2"}`}
-                  style={s.connected ? { background: s.colour } : undefined}
+                  className={`flex h-16 w-16 items-center justify-center rounded-full border-4 border-ink font-display text-2xl ${!shownAway.has(s.id) ? "text-ink" : "border-dashed bg-surface-2"}`}
+                  style={!shownAway.has(s.id) ? { background: s.colour } : undefined}
                 >
                   {initial(s.name)}
                 </span>
               )}
-              <span className={`text-center text-sm font-bold ${s.connected ? "" : "text-muted"}`}>
+              <span className={`text-center text-sm font-bold ${!shownAway.has(s.id) ? "" : "text-muted"}`}>
                 {s.id === session.member.id ? "You" : s.name}
                 {s.id === room.host_member_id ? " · host" : ""}
-                {!s.connected && <span className="block font-semibold">away</span>}
+                {shownAway.has(s.id) && <span className="block font-semibold">away</span>}
               </span>
               {isHost && s.id !== session.member.id && room.phase === "lobby" && (
                 <button

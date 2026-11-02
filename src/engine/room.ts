@@ -50,6 +50,15 @@ function isAdult(ctx: GameContext, id: string): boolean {
 
 /** Shared state key: who presses the host's buttons while the host's phone is away. */
 export const IN_CHARGE_KEY = "inCharge";
+/** Shared state key: when the stand-in's buttons start working (ISO time). */
+export const IN_CHARGE_FROM_KEY = "inChargeFrom";
+
+/**
+ * A phone only counts as away after this long out of the app (Joshua, 2 Nov:
+ * "Away should be if they are from the app for a longer length of time").
+ * Checking WhatsApp or sending the invite link takes less than this.
+ */
+export const AWAY_GRACE_SECONDS = 60;
 
 /**
  * While a game is on (or its results are showing) and the host's phone is
@@ -73,9 +82,12 @@ export function standIn(room: Pick<RoomSnapshot, "hostId" | "currentGame" | "mem
   return here.find(adult) ?? here[0] ?? null;
 }
 
-/** The host, or the stand-in while the host's phone is away. */
+/** The host, or the stand-in once the host's phone has been away for the grace period. */
 function mayRun(ctx: GameContext, actor: string): boolean {
-  return actor === ctx.room.hostId || actor === standIn(ctx.room, ctx.players);
+  if (actor === ctx.room.hostId) return true;
+  const from = ctx.room.state[IN_CHARGE_FROM_KEY];
+  if (typeof from !== "string" || Date.parse(ctx.now) < Date.parse(from)) return false;
+  return actor === standIn(ctx.room, ctx.players);
 }
 
 function participants(ctx: GameContext): string[] {
@@ -166,9 +178,14 @@ function withInCharge(ctx: GameContext, result: TurnResult): TurnResult {
   };
   const phase = w.phase ?? ctx.room.phase;
   if (after.currentGame === null || phase === LOBBY) return result;
+  const hostHere = after.members.find((m) => m.id === after.hostId)?.connected === true;
+  const was = after.state[IN_CHARGE_FROM_KEY];
+  // The clock starts when the host's phone goes away and keeps running while it
+  // stays away, whoever the stand-in is.
+  const from = hostHere ? null : typeof was === "string" ? was : new Date(Date.parse(ctx.now) + AWAY_GRACE_SECONDS * 1000).toISOString();
   const who = standIn(after, ctx.players);
-  if ((after.state[IN_CHARGE_KEY] ?? null) === who) return result;
-  return { ...result, write: { ...w, state: { ...after.state, [IN_CHARGE_KEY]: who } } };
+  if ((after.state[IN_CHARGE_KEY] ?? null) === who && (after.state[IN_CHARGE_FROM_KEY] ?? null) === from) return result;
+  return { ...result, write: { ...w, state: { ...after.state, [IN_CHARGE_KEY]: who, [IN_CHARGE_FROM_KEY]: from } } };
 }
 
 function applyRoomActionInner(ctx: GameContext, action: Action): TurnResult {

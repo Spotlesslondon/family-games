@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { avatarColour, initial, loadSession, memberClient } from "@/lib/client/session";
 import { PlayerAvatar } from "@/components/avatars";
 import { isAvatarKey, type AvatarKey } from "@/lib/avatars";
+import { useShownAway } from "@/lib/client/away";
 import { SIDE_NAME, findThemLine, hiddenLine, stillHiddenLine, stillIn, wasLine, type MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
 
 interface RoomRow {
@@ -39,6 +40,7 @@ export function BigScreen() {
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [attempt, setAttempt] = useState(0);
+  const shownAway = useShownAway(people);
   const dbRef = useRef<SupabaseClient | null>(null);
 
   const reload = useCallback(async () => {
@@ -189,10 +191,10 @@ export function BigScreen() {
         <ul className="flex flex-wrap gap-[3vw]">
           {people.map((p) => (
             <li key={p.id} className="flex flex-col items-center gap-3">
-              <span className={p.connected ? "" : "opacity-40"}>
-                <TvFace person={p} size="clamp(5rem,9vw,9rem)" wobble={p.connected} />
+              <span className={!shownAway.has(p.id) ? "" : "opacity-40"}>
+                <TvFace person={p} size="clamp(5rem,9vw,9rem)" wobble={!shownAway.has(p.id)} />
               </span>
-              <span className={`text-[clamp(1.1rem,2vw,2rem)] font-bold ${p.connected ? "" : "text-muted"}`}>
+              <span className={`text-[clamp(1.1rem,2vw,2rem)] font-bold ${!shownAway.has(p.id) ? "" : "text-muted"}`}>
                 {p.name}
                 {p.id === room?.host_member_id ? " · host" : ""}
               </span>

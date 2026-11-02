@@ -419,9 +419,15 @@ describe("the stand-in while the host's phone is away", () => {
     t.ok("presence", "mum", { connected: false });
     // Dad, not Kid: adults first, even though Kid joined first.
     expect(t.room.state.inCharge).toBe("dad");
+    // Not before the host has been away a whole minute: a quick look at WhatsApp hands nothing over.
+    expect(t.rejected("end_game", "dad")).toBe("host_only");
+    t.now = plus(59);
+    expect(t.rejected("end_game", "dad")).toBe("host_only");
+    t.now = plus(60);
     expect(t.rejected("end_game", "kid")).toBe("host_only");
     t.ok("presence", "mum", { connected: true });
     expect(t.room.state.inCharge).toBeNull();
+    expect(t.room.state.inChargeFrom).toBeNull();
     expect(t.rejected("end_game", "dad")).toBe("host_only");
   });
 
@@ -430,6 +436,7 @@ describe("the stand-in while the host's phone is away", () => {
     t.ok("join", "dad");
     t.ok("start_game", "mum", { gameId: "tap" });
     t.ok("presence", "mum", { connected: false });
+    t.now = plus(60);
     t.ok("end_game", "dad");
     expect(t.room.phase).toBe(LOBBY);
   });
