@@ -3,6 +3,7 @@
 // what happens. Behaviour assumptions are stated below; they are guesses about
 // people, not measurements.
 
+import { writeFileSync } from "node:fs";
 import { it } from "vitest";
 import { applyPrivate, applyWrite } from "@/engine/apply";
 import { LOBBY, RESULTS, applyRoomAction } from "@/engine/room";
@@ -183,5 +184,5 @@ it.skipIf(!process.env.SIM)("simulates the table choosing between rounds (run wi
       );
     }
   }
-  require("fs").writeFileSync("/tmp/sim.txt", lines.join("\n") + "\n");
+  writeFileSync("/tmp/sim.txt", lines.join("\n") + "\n");
 }, 120_000);
