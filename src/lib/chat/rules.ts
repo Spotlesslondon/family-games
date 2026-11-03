@@ -7,13 +7,17 @@ export type ChatMode = "typed" | "quick" | "off";
 
 export const MAX_CHAT = 120;
 
-/** One tap each, for anyone who cannot type. Words, not emojis (house rule). */
+/**
+ * One tap each, for anyone who cannot type. Words, not emojis (house rule).
+ * Approved by Joshua 3 Nov 2026; "Your turn!" replaced "Hurry up" so a slow
+ * reader is never rushed.
+ */
 export const QUICK_REPLIES = {
   ha: "Ha!",
   nooo: "Nooo",
   well_done: "Well done",
   good_one: "Good one",
-  hurry: "Hurry up",
+  your_turn: "Your turn!",
   knew_it: "I knew it",
   not_me: "It's not me",
   wait: "Wait for me",

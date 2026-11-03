@@ -6,9 +6,9 @@
 // Which word of a pair goes to the majority is chosen at random each game.
 //
 // Every word is a plain, everyday noun a six year old knows, with nothing
-// scary or grown-up. This list is a test seed only: under the content rule,
-// words reach the shared content bank only after adult review. Joshua reviews
-// this list before families beyond his own play.
+// scary or grown-up. Adult-reviewed and approved by Joshua on 3 Nov 2026
+// (claude/review-approvals-3-nov.md), with four pairs swapped to spare the
+// youngest readers: penguin/ostrich, carrot/potato, train/bus, boat/ship.
 
 export const MR_WHITE_PAIRS: readonly (readonly [string, string])[] = [
   ["shark", "dolphin"],
@@ -17,7 +17,7 @@ export const MR_WHITE_PAIRS: readonly (readonly [string, string])[] = [
   ["horse", "donkey"],
   ["duck", "swan"],
   ["frog", "toad"],
-  ["penguin", "puffin"],
+  ["penguin", "ostrich"],
   ["bee", "wasp"],
   ["rabbit", "hamster"],
   ["owl", "eagle"],
@@ -28,7 +28,7 @@ export const MR_WHITE_PAIRS: readonly (readonly [string, string])[] = [
   ["pancake", "waffle"],
   ["cake", "biscuit"],
   ["sandwich", "burger"],
-  ["carrot", "parsnip"],
+  ["carrot", "potato"],
   ["milk", "yoghurt"],
   ["chips", "crisps"],
   ["beach", "swimming pool"],
@@ -38,9 +38,9 @@ export const MR_WHITE_PAIRS: readonly (readonly [string, string])[] = [
   ["farm", "zoo"],
   ["bicycle", "scooter"],
   ["car", "taxi"],
-  ["train", "tram"],
+  ["train", "bus"],
   ["aeroplane", "helicopter"],
-  ["boat", "submarine"],
+  ["boat", "ship"],
   ["rocket", "spaceship"],
   ["football", "rugby"],
   ["birthday", "Christmas"],
