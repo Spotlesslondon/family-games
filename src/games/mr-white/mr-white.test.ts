@@ -505,3 +505,62 @@ describe("Mr White: his phone has gone when he is caught (2 Nov review)", () => 
     expect(t.act(mr, "guess", { word: t.villagerWord() }).ok).toBe(false);
   });
 });
+
+describe("Mr White: the table chooses between rounds (branch, 3 Nov)", () => {
+  it("a majority of the phones here decides at once; counts are shared, not who chose what", () => {
+    const t = new Table(30, 5);
+    t.start();
+    t.allSee();
+    t.typedRound();
+    expect(t.room.phase).toBe("between");
+    t.act("mum", "choose", { choice: "vote" });
+    t.act("kid", "choose", { choice: "more" });
+    expect(t.s.wantVote).toBe(1);
+    expect(t.s.wantMore).toBe(1);
+    expect(JSON.stringify(t.room.state)).not.toMatch(/"mum":"vote"|"kid":"more"/);
+    t.act("teen", "choose", { choice: "more" });
+    expect(t.room.phase).toBe("between");
+    t.act("nan", "choose", { choice: "more" });
+    expect(t.room.phase).toBe("clues");
+    expect(t.s.cluesThisVote).toBe(2);
+  });
+
+  it("a tie, once everyone here has chosen, goes to the vote; a phone that is away does not hold it up", () => {
+    const t = new Table(31, 5);
+    t.start();
+    t.allSee();
+    t.typedRound();
+    t.act("dad", "presence", { connected: false });
+    t.act("mum", "choose", { choice: "vote" });
+    t.act("kid", "choose", { choice: "more" });
+    t.act("teen", "choose", { choice: "vote" });
+    expect(t.room.phase).toBe("between");
+    t.act("nan", "choose", { choice: "more" });
+    expect(t.room.phase).toBe("vote");
+  });
+
+  it("after three rounds of clues the game goes straight to the vote", () => {
+    const t = new Table(32, 5);
+    t.start();
+    t.allSee();
+    for (let r = 1; r <= 2; r++) {
+      t.typedRound();
+      for (const id of t.stillIn()) t.act(id, "choose", { choice: "more" });
+      expect(t.room.phase).toBe("clues");
+    }
+    t.typedRound();
+    expect(t.room.phase).toBe("vote");
+  });
+
+  it("only players still in choose, once each; the host can still decide", () => {
+    const t = new Table(33, 5);
+    t.start();
+    t.allSee();
+    t.typedRound();
+    t.act("mum", "choose", { choice: "vote" });
+    expect(t.act("mum", "choose", { choice: "more" }).ok && t.s.wantMore).toBe(0);
+    expect(t.act("kid", "choose", { choice: "maybe" })).toEqual({ ok: false, reason: "bad_choice" });
+    expect(t.act("mum", "start_vote").ok).toBe(true);
+    expect(t.room.phase).toBe("vote");
+  });
+});

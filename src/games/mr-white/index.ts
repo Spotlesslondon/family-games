@@ -90,6 +90,12 @@ export interface MrWhiteState {
   runoff: boolean;
   /** Who has voted, never whom, until the count. */
   voted: string[];
+  /** Rounds of clues since the last vote (or the start), from 1. */
+  cluesThisVote?: number;
+  /** Between rounds: who has chosen, and how many chose each way. Never who chose what. */
+  chose?: string[];
+  wantVote?: number;
+  wantMore?: number;
   /** The last count, shown to everyone: all votes, and who went out, or a tie. */
   lastVote?: { round: number; votes: Record<string, string>; outId?: string; tie?: boolean };
   /** Filled in only when the game ends. */
@@ -97,6 +103,9 @@ export interface MrWhiteState {
 }
 
 const MAX_GUESS = 40;
+/** After this many rounds of clues since the last vote, the game goes straight to the vote. */
+export const MAX_CLUE_ROUNDS = 3;
+const FRESH_CHOICE = { chose: [] as string[], wantVote: 0, wantMore: 0 };
 const MAX_CLUE = 20;
 
 /** How many are hidden among the players, and whether Mr White is one of them. */
@@ -203,7 +212,7 @@ function winner(ctx: GameContext, s: MrWhiteState): Outcome | null {
 function nextRound(ctx: GameContext, s: MrWhiteState, phase: Phase = "clues"): TurnResult {
   return accept({
     phase,
-    state: { ...s, round: s.round + 1, turn: 0, candidates: [], runoff: false, voted: [] },
+    state: { ...s, round: s.round + 1, turn: 0, candidates: [], runoff: false, voted: [], cluesThisVote: 1, ...FRESH_CHOICE },
     private: clearedVotes(ctx, s),
   });
 }
@@ -246,7 +255,11 @@ function tally(ctx: GameContext, s: MrWhiteState): TurnResult {
 function nextTurn(s: MrWhiteState, clues: Clue[]): TurnResult {
   const turn = s.turn + 1;
   if (turn < stillIn(s).length) return accept({ state: { ...s, clues, turn } });
-  return accept({ phase: "between", state: { ...s, clues, turn: 0 } });
+  // Enough rounds of clues: straight to the vote, so the table cannot stall.
+  if ((s.cluesThisVote ?? 1) >= MAX_CLUE_ROUNDS) {
+    return accept({ phase: "vote", state: { ...s, clues, turn: 0, candidates: stillIn(s), runoff: false, voted: [], ...FRESH_CHOICE } });
+  }
+  return accept({ phase: "between", state: { ...s, clues, turn: 0, ...FRESH_CHOICE } });
 }
 
 export const mrWhite: GameModule = {
@@ -365,15 +378,45 @@ export const mrWhite: GameModule = {
       }
 
       case "another_round": {
+        // The host's fallback ("Decide now"); normally the table chooses.
         if (phase !== "between") return reject("wrong_phase");
         if (!isHost) return reject("host_only");
-        return accept({ phase: "clues", state: { ...s, round: s.round + 1, turn: 0 } });
+        return accept({ phase: "clues", state: { ...s, round: s.round + 1, turn: 0, cluesThisVote: (s.cluesThisVote ?? 1) + 1, ...FRESH_CHOICE } });
       }
 
       case "start_vote": {
         if (phase !== "between") return reject("wrong_phase");
         if (!isHost) return reject("host_only");
-        return accept({ phase: "vote", state: { ...s, candidates: left, runoff: false, voted: [] } });
+        return accept({ phase: "vote", state: { ...s, candidates: left, runoff: false, voted: [], ...FRESH_CHOICE } });
+      }
+
+      case "choose": {
+        // Between rounds, everyone still in chooses: vote now, or another round
+        // of clues (Joshua, 3 Nov). A majority decides at once; if everyone has
+        // chosen and it is a tie, the vote wins, so the game moves on.
+        if (phase !== "between") return noop();
+        if (!actorIn) return reject("you_are_out");
+        const choice = payload.choice;
+        if (choice !== "vote" && choice !== "more") return reject("bad_choice");
+        const chose = s.chose ?? [];
+        if (chose.includes(actor)) return noop();
+        const next = {
+          ...s,
+          chose: [...chose, actor],
+          wantVote: (s.wantVote ?? 0) + (choice === "vote" ? 1 : 0),
+          wantMore: (s.wantMore ?? 0) + (choice === "more" ? 1 : 0),
+        };
+        // Count only the phones that are here: one asleep cannot hold the table up.
+        const here = left.filter((id) => ctx.room.members.find((m) => m.id === id)?.connected !== false || next.chose.includes(id));
+        const majority = Math.floor(here.length / 2) + 1;
+        const everyone = here.every((id) => next.chose.includes(id));
+        if (next.wantVote >= majority || (everyone && next.wantMore < majority)) {
+          return accept({ phase: "vote", state: { ...next, candidates: left, runoff: false, voted: [], ...FRESH_CHOICE } });
+        }
+        if (next.wantMore >= majority) {
+          return accept({ phase: "clues", state: { ...next, round: s.round + 1, turn: 0, cluesThisVote: (s.cluesThisVote ?? 1) + 1, ...FRESH_CHOICE } });
+        }
+        return accept({ state: next });
       }
 
       case "vote": {
