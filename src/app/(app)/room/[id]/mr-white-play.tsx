@@ -36,6 +36,11 @@ export interface MrWhitePublic {
   candidates?: string[];
   runoff?: boolean;
   voted?: string[];
+  /** Between rounds: rounds of clues since the last vote, who has chosen, and the counts. */
+  cluesThisVote?: number;
+  chose?: string[];
+  wantVote?: number;
+  wantMore?: number;
   lastVote?: { round: number; votes: Record<string, string>; outId?: string; tie?: boolean };
   reveal?: { villagerWord: string; wolfWord: string; sides: Record<string, Side>; outcome: Outcome };
 }
@@ -45,6 +50,14 @@ export interface MrWhiteMine {
   mrWhite?: boolean;
   vote?: string | null;
 }
+
+/** "2 want to vote, 1 wants another round." Shared by the phones and the TV. */
+export function choiceLine(wantVote: number, wantMore: number): string {
+  return `${wantVote} ${wantVote === 1 ? "wants" : "want"} to vote, ${wantMore} ${wantMore === 1 ? "wants" : "want"} another round.`;
+}
+
+/** After this many rounds of clues since the last vote, it is the vote (mirrors the server). */
+const MAX_CLUE_ROUNDS = 3;
 
 type Act = (type: string, payload?: Record<string, unknown>) => Promise<{ ok?: boolean; reason?: string } | null>;
 
@@ -193,6 +206,9 @@ export function MrWhitePlay({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [peek, setPeek] = useState(false);
+  // The choice tapped between rounds, for this round of clues only, shown at once.
+  const [picked, setPicked] = useState<{ key: string; choice: "vote" | "more" } | null>(null);
+  const chooseKey = `${state.round ?? 0}:${state.cluesThisVote ?? 1}`;
   const [confirmSkip, setConfirmSkip] = useState(false);
   const [guess, setGuess] = useState("");
   const [clue, setClue] = useState("");
@@ -356,21 +372,55 @@ export function MrWhitePlay({
     );
   }
 
-  // ---- 3. Another round, or vote ---------------------------------------------
+  // ---- 3. Another round, or vote: the table chooses (Joshua, 3 Nov) ---------
+  // Everyone still in taps one. A majority of the phones here decides at once,
+  // a tie goes to the vote, and after the third round of clues it is the vote
+  // anyway. Phones show how many chose each way, never who.
   if (phase === "between") {
+    const chose = state.chose ?? [];
+    const iChose = chose.includes(me) || (picked?.key === chooseKey);
+    const wantVote = state.wantVote ?? 0;
+    const wantMore = state.wantMore ?? 0;
+    const roundsNow = state.cluesThisVote ?? 1;
+    const lastBeforeVote = roundsNow >= MAX_CLUE_ROUNDS - 1;
+    const choose = async (choice: "vote" | "more") => {
+      setPicked({ key: chooseKey, choice });
+      const ok = await send("choose", { choice });
+      if (!ok) setPicked(null);
+    };
     return (
       <section className="flex flex-1 flex-col gap-4">
         {outBanner || <MySecret mine={mine} />}
         <h2 className={big}>Clues done</h2>
-        <p className="text-lg text-muted">{isHost ? "Does everyone have a hunch? Go round again, or vote." : "The host is deciding: another round, or the vote."}</p>
+        <p className="text-lg">{amOut ? "The others are choosing: vote now, or another round of clues." : "Vote now, or another round of clues? Most of you decide."}</p>
+        <p className="card px-4 py-3 text-center font-bold" aria-live="polite">
+          {choiceLine(wantVote, wantMore)} {chose.length} of {left.length} {chose.length === 1 ? "has" : "have"} chosen.
+        </p>
+        {lastBeforeVote && <p className="text-center text-muted">After the next round of clues it goes straight to the vote.</p>}
         <ClueBoard state={state} people={people} me={me} />
         {err}
-        {isHost && (
-          <div className="mt-auto flex flex-col gap-3">
-            <button type="button" disabled={busy} onClick={() => send("start_vote")} className={primary}>{busy ? "Starting the vote" : "Vote now"}</button>
-            <button type="button" disabled={busy} onClick={() => send("another_round")} className={secondary}>Another round of clues</button>
-          </div>
-        )}
+        <div className="mt-auto flex flex-col gap-3">
+          {!amOut &&
+            (iChose ? (
+              <p className="text-center text-lg font-bold">
+                {picked?.key === chooseKey ? (picked.choice === "vote" ? "You chose: vote now." : "You chose: another round.") : "You have chosen."} Waiting for the others.
+              </p>
+            ) : (
+              <>
+                <button type="button" disabled={busy} onClick={() => choose("vote")} className={primary}>Vote now</button>
+                <button type="button" disabled={busy} onClick={() => choose("more")} className={secondary}>Another round of clues</button>
+              </>
+            ))}
+          {isHost && (
+            <div className="flex flex-col items-center gap-2 pt-2">
+              <span className="text-sm font-bold text-muted">Host: decide now</span>
+              <div className="flex gap-3">
+                <button type="button" disabled={busy} onClick={() => send("start_vote")} className="btn btn-secondary h-10 px-4 text-sm font-bold disabled:opacity-60">Vote</button>
+                <button type="button" disabled={busy} onClick={() => send("another_round")} className="btn btn-secondary h-10 px-4 text-sm font-bold disabled:opacity-60">Another round</button>
+              </div>
+            </div>
+          )}
+        </div>
       </section>
     );
   }

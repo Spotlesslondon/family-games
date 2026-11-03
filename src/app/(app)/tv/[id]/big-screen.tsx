@@ -12,7 +12,7 @@ import { avatarColour, initial, loadSession, memberClient } from "@/lib/client/s
 import { PlayerAvatar } from "@/components/avatars";
 import { isAvatarKey, type AvatarKey } from "@/lib/avatars";
 import { useShownAway } from "@/lib/client/away";
-import { SIDE_NAME, findThemLine, hiddenLine, stillHiddenLine, stillIn, wasLine, type MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
+import { SIDE_NAME, choiceLine, findThemLine, hiddenLine, stillHiddenLine, stillIn, wasLine, type MrWhitePublic } from "@/app/(app)/room/[id]/mr-white-play";
 
 interface RoomRow {
   code: string;
@@ -301,7 +301,9 @@ function MrWhiteTv({ phase, state, people }: { phase: string; state: MrWhitePubl
     body = (
       <>
         <h1 className={headline}>Clues done</h1>
-        <p className={sub}>Another round of clues, or time to vote?</p>
+        <p className={sub}>
+          Vote now, or another round? Choose on your phone. {choiceLine(state.wantVote ?? 0, state.wantMore ?? 0)}
+        </p>
         {board}
       </>
     );
