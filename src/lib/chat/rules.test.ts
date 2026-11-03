@@ -34,6 +34,11 @@ describe("chat rules", () => {
     for (const t of ["oh shit", "SH1T", "f u c k", "you b1tch", "what a w4nker"]) expect(refused(t), t).toBe("chat_word");
   });
 
+  it("refuses the bullying and self-harm words Joshua added on 3 Nov", () => {
+    for (const t of ["kys", "just KILL YOURSELF", "kill urself lol", "k1ll y0urself", "what a slag", "go die"]) expect(refused(t), t).toBe("chat_word");
+    for (const t of ["the dragon will kill you", "my skill yourself", "Go dig the garden", "slagheap"]) expect(refused(t), t).toBeNull();
+  });
+
   it("knows the quick replies, and nothing else is one", () => {
     expect(isQuickKey("well_done")).toBe(true);
     expect(isQuickKey("toString")).toBe(false);

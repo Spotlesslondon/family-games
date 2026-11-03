@@ -57,7 +57,12 @@ const BLOCKED = [
   "bollocks", "piss", "pissed", "tosser", "knob", "knobhead", "bellend", "porn", "sex", "sexy", "nude", "nudes",
   "nigger", "niggers", "nigga", "paki", "pakis", "faggot", "faggots", "fag", "fags", "retard", "retards",
   "spastic", "spaz", "tranny", "kike", "chink", "gook", "wog", "coon", "dyke",
+  // Added by Joshua 3 Nov 2026 on the CEO seat's advice: bullying and self-harm.
+  "slag", "slags", "kys",
 ];
+
+/** Phrases refused wherever they appear, after the same letter swaps (Joshua, 3 Nov). */
+const BLOCKED_PHRASES = ["kill yourself", "kill urself", "kill ur self", "kill your self", "go die"];
 const BLOCKED_SET = new Set(BLOCKED);
 
 function normalise(text: string): string {
@@ -86,6 +91,8 @@ export function checkTyped(raw: unknown): { ok: true; text: string } | { ok: fal
   }
   const words = normalise(text).split(/[^a-z]+/).filter(Boolean);
   if (words.some((w) => BLOCKED_SET.has(w))) return { ok: false, reason: "chat_word" };
+  const spaced = ` ${words.join(" ")} `;
+  if (BLOCKED_PHRASES.some((p) => spaced.includes(` ${p} `))) return { ok: false, reason: "chat_word" };
   // Letters spaced out to slip past: "f u c k".
   const joined = normalise(text).replace(/[^a-z]/g, "");
   if (joined.length <= 12 && BLOCKED_SET.has(joined)) return { ok: false, reason: "chat_word" };
