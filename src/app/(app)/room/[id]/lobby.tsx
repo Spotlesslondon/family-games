@@ -35,6 +35,7 @@ interface RoomRow {
   status: "open" | "closed";
   phase: string;
   current_game: string | null;
+  chat_mode?: string | null;
   state: Record<string, unknown>;
 }
 
@@ -129,7 +130,7 @@ export function Lobby() {
     const db = dbRef.current;
     if (!db) return;
     const [{ data: r }, { data: inRoom }, { data: people }, { data: secret }] = await Promise.all([
-      db.from("rooms").select("id, code, join_code, locked_at, host_member_id, status, phase, current_game, state").eq("id", id).maybeSingle(),
+      db.from("rooms").select("id, code, join_code, locked_at, host_member_id, status, phase, current_game, state, chat_mode").eq("id", id).maybeSingle(),
       db.from("room_members").select("member_id, connected, joined_at").eq("room_id", id).order("joined_at"),
       db.from("members").select("id, display_name, avatar").order("created_at"),
       db.from("room_private").select("state").eq("room_id", id).maybeSingle(),
@@ -397,7 +398,7 @@ export function Lobby() {
         <div className="flex items-center justify-between">
           <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : "Mr White"}</h1>
           <div className="flex items-center gap-3">
-            <Chat roomId={id} me={session.member.id} people={people} />
+            <Chat roomId={id} me={session.member.id} people={people} isHost={isHost} chatOff={room.chat_mode === "off"} />
             {hostEnd}
           </div>
         </div>
@@ -462,7 +463,7 @@ export function Lobby() {
       <div className="flex items-center justify-between">
         <h1 className="font-display text-3xl font-semibold">Game night</h1>
         <div className="flex items-center gap-3">
-          <Chat roomId={id} me={session.member.id} people={people} />
+          <Chat roomId={id} me={session.member.id} people={people} isHost={isHost} chatOff={room.chat_mode === "off"} />
           {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ink">You are host</span>}
         </div>
       </div>

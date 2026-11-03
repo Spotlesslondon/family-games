@@ -80,7 +80,14 @@ export async function setChatMode(accessToken: string, roomId: unknown, mode: un
   const n = await night(accessToken, roomId);
   if (n.memberId !== n.hostId) throw new AuthError("host_only", 403);
   if (mode !== null && mode !== "typed" && mode !== "quick" && mode !== "off") throw new AuthError("invalid_request", 400);
-  const { error } = await serviceClient().from("rooms").update({ chat_mode: mode }).eq("id", n.roomId);
+  const db = serviceClient();
+  // Turning chat off deletes what was said at once, not at the end of the
+  // night (CEO seat brief, 3 Nov); turning it back on starts empty.
+  if (mode === "off") {
+    const { error: wipe } = await db.from("room_messages").delete().eq("room_id", n.roomId);
+    if (wipe) throw new AuthError("server_busy", 503, { reason: wipe.message });
+  }
+  const { error } = await db.from("rooms").update({ chat_mode: mode }).eq("id", n.roomId);
   if (error) throw new AuthError("server_busy", 503, { reason: error.message });
   return { ok: true };
 }

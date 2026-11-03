@@ -7,6 +7,16 @@ export type ChatMode = "typed" | "quick" | "off";
 
 export const MAX_CHAT = 120;
 
+/** Every word the chat switches show, in one place (CEO seat brief, 3 Nov). */
+export const CHAT_WORDS = {
+  chat: "Chat",
+  typing: "Typing",
+  on: "On",
+  off: "Off",
+  turnedOff: "The host turned chat off.",
+  turnedOn: "The host turned chat on.",
+} as const;
+
 /**
  * One tap each, for anyone who cannot type. Words, not emojis (house rule).
  * Approved by Joshua 3 Nov 2026; "Your turn!" replaced "Hurry up" so a slow

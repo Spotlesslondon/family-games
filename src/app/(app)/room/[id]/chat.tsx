@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { memberClient, message, postAsMember } from "@/lib/client/session";
-import type { ChatMode } from "@/lib/chat/rules";
+import { CHAT_WORDS, type ChatMode } from "@/lib/chat/rules";
 import { Avatar, type Person } from "./mr-white-play";
 
 interface Line {
@@ -25,14 +25,22 @@ interface Status {
   quick: Record<string, string>;
 }
 
-const MODE_LABEL: Record<string, string> = {
-  auto: "Automatic",
-  typed: "Typing on",
-  quick: "Quick replies only",
-  off: "Chat off",
-};
 
-export function Chat({ roomId, me, people }: { roomId: string; me: string; people: Map<string, Person> }) {
+export function Chat({
+  roomId,
+  me,
+  people,
+  isHost,
+  chatOff,
+}: {
+  roomId: string;
+  me: string;
+  people: Map<string, Person>;
+  /** The real host: only they switch chat on or off (a stand-in cannot). */
+  isHost: boolean;
+  /** The host has switched chat off for the night. */
+  chatOff: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
@@ -42,6 +50,18 @@ export function Chat({ roomId, me, people }: { roomId: string; me: string; peopl
   const [seenUpTo, setSeenUpTo] = useState(() => new Date().toISOString());
   const [removing, setRemoving] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // "The host turned chat on." for a few seconds after it comes back.
+  const [wasOff, setWasOff] = useState(chatOff);
+  const [justOn, setJustOn] = useState(false);
+  if (wasOff !== chatOff) {
+    setWasOff(chatOff);
+    setJustOn(!chatOff);
+  }
+  useEffect(() => {
+    if (!justOn) return;
+    const t = setTimeout(() => setJustOn(false), 8000);
+    return () => clearTimeout(t);
+  }, [justOn]);
   const headcount = people.size;
 
   const load = useCallback(async () => {
@@ -90,7 +110,13 @@ export function Chat({ roomId, me, people }: { roomId: string; me: string; peopl
     return () => {
       alive = false;
     };
-  }, [open, call, headcount]);
+  }, [open, call, headcount, chatOff]);
+
+  // Chat switched off or back on: what was said is gone, so read again.
+  useEffect(() => {
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
+  }, [chatOff, load]);
 
   // While open, everything shown counts as read, and the newest is in view.
   useEffect(() => {
@@ -149,10 +175,20 @@ export function Chat({ roomId, me, people }: { roomId: string; me: string; peopl
     </button>
   );
 
-  if (!open) return button;
+  // Chat off: the button goes from every phone but the host's, with one plain line.
+  if (chatOff && !isHost) return <span className="max-w-40 text-right text-sm font-bold text-muted">{CHAT_WORDS.turnedOff}</span>;
+  if (!open) {
+    return justOn && !isHost ? (
+      <span className="flex items-center gap-2">
+        <span className="max-w-32 text-right text-xs font-bold text-muted">{CHAT_WORDS.turnedOn}</span>
+        {button}
+      </span>
+    ) : (
+      button
+    );
+  }
 
   const mode = status?.mode;
-  const modeKeys: (ChatMode | null)[] = [null, "typed", "quick", "off"];
 
   return (
     <>
@@ -167,22 +203,12 @@ export function Chat({ roomId, me, people }: { roomId: string; me: string; peopl
           </div>
           <p className="text-sm text-muted">Only people in tonight&apos;s room see this. It is deleted when the night ends.</p>
 
-          {status?.isHost && (
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Chat setting">
-              {modeKeys.map((k) => {
-                const chosen = (status.chosen ?? null) === k;
-                return (
-                  <button
-                    key={k ?? "auto"}
-                    type="button"
-                    aria-pressed={chosen}
-                    onClick={() => setMode(k)}
-                    className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold ${chosen ? "bg-go" : "bg-surface"}`}
-                  >
-                    {MODE_LABEL[k ?? "auto"]}
-                  </button>
-                );
-              })}
+          {isHost && status && (
+            <div className="card flex flex-col gap-1 p-2" role="group" aria-label="Chat switches">
+              <Switch label={CHAT_WORDS.chat} on={status.mode !== "off"} onTap={() => setMode(status.mode === "off" ? null : "off")} />
+              {status.mode !== "off" && (
+                <Switch label={CHAT_WORDS.typing} on={status.mode === "typed"} onTap={() => setMode(status.mode === "typed" ? "quick" : "typed")} />
+              )}
             </div>
           )}
 
@@ -215,7 +241,7 @@ export function Chat({ roomId, me, people }: { roomId: string; me: string; peopl
           {error && <p role="alert" className="text-center font-bold text-alert">{error}</p>}
 
           {mode === "off" ? (
-            <p className="text-center font-bold text-muted">The host has turned chat off.</p>
+            <p className="text-center font-bold text-muted">{CHAT_WORDS.turnedOff}</p>
           ) : (
             <>
               <div className="flex flex-wrap gap-2" role="group" aria-label="Quick replies">
@@ -263,5 +289,14 @@ export function Chat({ roomId, me, people }: { roomId: string; me: string; peopl
         </div>
       </div>
     </>
+  );
+}
+
+function Switch({ label, on, onTap }: { label: string; on: boolean; onTap: () => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={onTap} className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left text-lg font-bold">
+      <span>{label}</span>
+      <span className={`rounded-full border-2 border-ink px-4 py-1 text-sm ${on ? "bg-go text-ink" : "bg-surface-2 text-muted"}`}>{on ? CHAT_WORDS.on : CHAT_WORDS.off}</span>
+    </button>
   );
 }
