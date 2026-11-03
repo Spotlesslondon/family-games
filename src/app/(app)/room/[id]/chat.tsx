@@ -213,7 +213,7 @@ export function Chat({
           )}
 
           <div ref={listRef} className="flex flex-1 flex-col gap-2 overflow-y-auto py-2">
-            {lines.length === 0 && <p className="m-auto text-center text-muted">No messages yet. Say hello.</p>}
+            {lines.length === 0 && status?.mode !== "off" && <p className="m-auto text-center text-muted">No messages yet. Say hello.</p>}
             {lines.map((l) => (
               <div key={l.id} className={`flex items-start gap-2 ${l.member_id === me ? "flex-row-reverse" : ""}`}>
                 <Avatar p={people.get(l.member_id)} size="h-9 w-9 text-base" />
