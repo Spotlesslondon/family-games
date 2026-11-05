@@ -1,6 +1,7 @@
 // Server-only room service. Loads a room, runs the engine, commits the turn
 // through commit_room_turn_v2 in one transaction, retrying on a lost race.
 
+import { hasLiveForecast } from "./forecast";
 import { randomInt } from "node:crypto";
 import { serviceClient } from "@/lib/supabase/server";
 import { ageBand } from "@/lib/auth/crypto";
@@ -195,7 +196,8 @@ export async function openRoom(accessToken: string, rawListId?: unknown): Promis
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const existing = await findOpenRoom(caller.family_id);
-    if (existing && isIdle(existing.last_activity_at)) {
+    // A live Family Forecast keeps the night open through a long day (0016).
+    if (existing && isIdle(existing.last_activity_at) && !(await hasLiveForecast(existing.id))) {
       await closeIdle(existing.id);
       continue;
     }
@@ -240,7 +242,7 @@ export async function joinByCode(accessToken: string, rawCode: unknown): Promise
   if (column === "join_code") query = query.is("locked_at", null);
   const { data: room } = await query.maybeSingle();
   if (!room || room.family_id !== caller.family_id) throw new AuthError("room_not_found", 404);
-  if (isIdle(room.last_activity_at)) {
+  if (isIdle(room.last_activity_at) && !(await hasLiveForecast(room.id))) {
     await closeIdle(room.id);
     throw new AuthError("room_not_found", 404);
   }

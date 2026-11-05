@@ -38,7 +38,7 @@ for f in "$ROOT"/supabase/migrations/*.sql; do
   "${PSQL[@]}" -d family_games_test -f "$f"
 done
 
-for f in "$ROOT"/supabase/tests/0[1-9]*.sql; do
+for f in "$ROOT"/supabase/tests/0[1-9]*.sql "$ROOT"/supabase/tests/[1-9][0-9]*.sql; do
   echo "test:       $(basename "$f")"
   "${PSQL[@]}" -d family_games_test -f "$f"
 done

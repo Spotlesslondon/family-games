@@ -22,6 +22,7 @@ import { QuizPlay, QuizResults } from "./quiz-play";
 import type { QuizLength, QuizMine, QuizPublic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
 import { Chat } from "./chat";
+import { Forecast } from "./forecast";
 import { PlayerAvatar } from "@/components/avatars";
 import { isAvatarKey, type AvatarKey } from "@/lib/avatars";
 import { useNow, useShownAway } from "@/lib/client/away";
@@ -399,6 +400,7 @@ export function Lobby() {
           <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : "Mr White"}</h1>
           <div className="flex items-center gap-3">
             <Chat roomId={id} me={session.member.id} people={people} isHost={isHost} chatOff={room.chat_mode === "off"} />
+            <Forecast roomId={id} me={session.member.id} people={people} isHost={isHost} />
             {hostEnd}
           </div>
         </div>
@@ -464,6 +466,7 @@ export function Lobby() {
         <h1 className="font-display text-3xl font-semibold">Game night</h1>
         <div className="flex items-center gap-3">
           <Chat roomId={id} me={session.member.id} people={people} isHost={isHost} chatOff={room.chat_mode === "off"} />
+            <Forecast roomId={id} me={session.member.id} people={people} isHost={isHost} />
           {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ink">You are host</span>}
         </div>
       </div>
