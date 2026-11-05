@@ -2,7 +2,7 @@
 // through commit_room_turn_v2 in one transaction, retrying on a lost race.
 
 import { hasLiveForecast } from "./forecast";
-import { randomInt } from "node:crypto";
+import { createHmac, randomInt } from "node:crypto";
 import { serviceClient } from "@/lib/supabase/server";
 import { ageBand } from "@/lib/auth/crypto";
 import { AuthError, caller, callerMember, type Caller } from "@/lib/auth/service";
@@ -11,6 +11,14 @@ import { LOBBY, applyRoomAction } from "@/engine/room";
 import { cryptoRng } from "@/engine/rng";
 import type { Action, GameContext, Player, PrivateMap, RoomSnapshot } from "@/engine/types";
 import "@/games";
+
+/** A keyed hash of the label as a number in [0, 1). The key is the server's
+ *  existing secret, used here under its own label so no other use can collide. */
+function serverSecret(label: string): number {
+  const key = process.env.MEMBER_PASSWORD_KEY;
+  if (!key || key.length < 32) throw new Error("server key missing");
+  return createHmac("sha256", key).update(`game-secret:${label}`).digest().readUInt32BE(0) / 4294967296;
+}
 
 const ROOM_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I or O: they read as 1 and 0 across a room
 
@@ -105,6 +113,7 @@ export async function actAs(
       private: loaded.privateMap,
       now: new Date().toISOString(),
       rng: cryptoRng(),
+      secret: serverSecret,
     };
     const action: Action = { type, actorId: caller.id, payload };
     const result = applyRoomAction(ctx, action);

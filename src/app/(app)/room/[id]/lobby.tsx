@@ -19,6 +19,8 @@ import {
 import { Reconnect } from "@/app/(app)/reconnect";
 import { MrWhitePlay, MrWhiteResults, type MrWhiteMine, type MrWhitePublic } from "./mr-white-play";
 import { QuizPlay, QuizResults } from "./quiz-play";
+import { NervePlay, NerveResults, type NerveOptions } from "./nerve-play";
+import type { NervePublic } from "@/games/nerve/shape";
 import type { QuizLength, QuizMine, QuizPublic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
 import { Chat } from "./chat";
@@ -103,7 +105,8 @@ export function Lobby() {
   // Mr White settings, for the host: Mr White on and typed clues by default.
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
-  const [game, setGame] = useState<"mr-white" | "quiz">("mr-white");
+  const [game, setGame] = useState<"mr-white" | "quiz" | "nerve">("mr-white");
+  const [nerveOpts, setNerveOpts] = useState<NerveOptions>({ pace: "normal", length: "normal", level: "normal" });
   const [quizLength, setQuizLength] = useState<QuizLength>("normal");
 
   // Every action asks the session store for a current token, so a game night
@@ -361,8 +364,9 @@ export function Lobby() {
   const meSeat = seats.find((s) => s.id === session.member.id);
 
   // A game is running, or has just finished: the game's own screens take over.
-  if ((room.current_game === "mr-white" || room.current_game === "quiz") && room.phase !== "lobby") {
+  if ((room.current_game === "mr-white" || room.current_game === "quiz" || room.current_game === "nerve") && room.phase !== "lobby") {
     const isQuiz = room.current_game === "quiz";
+    const isNerve = room.current_game === "nerve";
     // While the host's phone is away, the stand-in gets the host's buttons
     // (the server checks the same rule, room engine standIn).
     // Only once the host has been away a whole minute, the same rule the server applies.
@@ -397,7 +401,7 @@ export function Lobby() {
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
         <div className="flex items-center justify-between">
-          <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : "Mr White"}</h1>
+          <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : "Mr White"}</h1>
           <div className="flex items-center gap-3">
             <Chat roomId={id} me={session.member.id} people={people} isHost={isHost} chatOff={room.chat_mode === "off"} />
             <Forecast roomId={id} me={session.member.id} people={people} isHost={isHost} />
@@ -406,7 +410,13 @@ export function Lobby() {
         </div>
         {standInLine}
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
-        {isQuiz ? (
+        {isNerve ? (
+          room.phase === "results" ? (
+            <NerveResults state={room.state as unknown as NervePublic} me={session.member.id} hostId={controlId} people={people} act={act} />
+          ) : (
+            <NervePlay roomId={id} phase={room.phase} state={room.state as unknown as NervePublic} me={session.member.id} hostId={controlId} people={people} act={act} />
+          )
+        ) : isQuiz ? (
           room.phase === "results" ? (
             <QuizResults state={room.state as unknown as QuizPublic} me={session.member.id} hostId={controlId} people={people} act={act} />
           ) : (
@@ -553,17 +563,18 @@ export function Lobby() {
                 {people.get(room.host_member_id)?.name ?? "The host"} is away, so you can start the next game.
               </p>
             )}
-            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Choose a game">
+            <div className="grid grid-cols-3 gap-2" role="group" aria-label="Choose a game">
               {([
                 ["mr-white", "Mr White"],
                 ["quiz", "The quiz"],
+                ["nerve", "Nerve"],
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
                   aria-pressed={game === key}
                   onClick={() => setGame(key)}
-                  className={`card relative h-14 font-display text-xl font-semibold ${game === key ? "ring-4 ring-pick" : "opacity-70"}`}
+                  className={`card relative h-14 font-display text-lg font-semibold ${game === key ? "ring-4 ring-pick" : "opacity-70"}`}
                 >
                   {label}
                 </button>
@@ -590,6 +601,30 @@ export function Lobby() {
                   <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{spoken ? "Said out loud" : "Typed on phones"}</span>
                 </button>
               </div>
+            ) : game === "nerve" ? (
+              <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Nerve settings">
+                <p className="px-3 text-sm text-muted">Hold the button while the pot climbs. Let go to bank it. Hold too long and it busts.</p>
+                {([
+                  ["pace", "Pace", ["relaxed", "normal", "quick"], { relaxed: "Relaxed", normal: "Normal", quick: "Quick" }],
+                  ["length", "Length", ["short", "normal", "long"], { short: "Short, 3 rounds", normal: "Normal, 5 rounds", long: "Long, 8 rounds" }],
+                  ["level", "Nerve level", ["gentle", "normal", "wild"], { gentle: "Gentle", normal: "Normal", wild: "Wild" }],
+                ] as const).map(([key, label, order, names]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() =>
+                      setNerveOpts((o) => {
+                        const list = order as readonly string[];
+                        return { ...o, [key]: list[(list.indexOf(o[key]) + 1) % list.length] };
+                      })
+                    }
+                    className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+                  >
+                    <span>{label}</span>
+                    <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{(names as Record<string, string>)[nerveOpts[key]]}</span>
+                  </button>
+                ))}
+              </div>
             ) : (
               <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Quiz settings">
                 <p className="px-3 text-sm text-muted">Everyone gets questions at their own level, on their own phone.</p>
@@ -607,17 +642,23 @@ export function Lobby() {
             )}
             <button
               type="button"
-              disabled={here < (game === "quiz" ? 2 : 3)}
+              disabled={here < (game === "mr-white" ? 3 : 2)}
               onClick={async () => {
                 const out =
-                  game === "quiz"
+                  game === "nerve"
+                    ? await act("start_game", { gameId: "nerve", options: { ...nerveOpts } })
+                    : game === "quiz"
                     ? await act("start_game", { gameId: "quiz", options: { length: quizLength } })
                     : await act("start_game", { gameId: "mr-white", options: { mrWhite: mrWhiteOn, spoken } });
                 if (out && out.ok === false) setActionError(message(out.reason));
               }}
               className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
-              {game === "quiz"
+              {game === "nerve"
+                ? here < 2
+                  ? "Nerve needs 2 players"
+                  : "Play Nerve"
+                : game === "quiz"
                 ? here < 2
                   ? "The quiz needs 2 players"
                   : "Play the quiz"

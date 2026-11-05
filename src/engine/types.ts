@@ -87,6 +87,13 @@ export interface GameContext {
   now: string;
   /** Deterministic in tests, crypto-backed in production. Returns [0, 1). */
   rng: () => number;
+  /**
+   * A number in [0, 1) that only the server can work out from a label: a keyed
+   * hash with a server-held key. A game can put the label in public state and
+   * still keep the number secret (Nerve's bust number). Absent in a context
+   * built without the key; deterministic in tests.
+   */
+  secret?: (label: string) => number;
 }
 
 export interface GameModule {
