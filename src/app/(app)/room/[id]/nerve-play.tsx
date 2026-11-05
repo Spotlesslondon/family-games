@@ -214,7 +214,7 @@ export function NervePlay({
       : !inRound
         ? "Sitting this round out"
         : banked
-          ? "Banked"
+          ? "Let go"
           : down
             ? "Let go to bank"
             : pending
@@ -231,7 +231,7 @@ export function NervePlay({
         ) : (
           <span className="font-display text-5xl font-bold leading-none">{climbing ? "Ready..." : "Hold on"}</span>
         )}
-        {banked && banked.value >= 0 && <p className="mt-2 text-xl">You banked {banked.value}</p>}
+        {banked && banked.value >= 0 && <p className="mt-2 text-xl">You let go at {banked.value}. Was it in time?</p>}
       </div>
 
       <button

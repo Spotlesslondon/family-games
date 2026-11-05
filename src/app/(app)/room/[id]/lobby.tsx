@@ -393,19 +393,21 @@ export function Lobby() {
           setConfirmEnd(false);
           act("end_game");
         }}
-        className={`h-10 btn px-4 text-sm font-bold ${confirmEnd ? "btn-danger" : "btn-secondary text-muted"}`}
+        className={`h-10 shrink-0 whitespace-nowrap btn px-4 text-sm font-bold ${confirmEnd ? "btn-danger" : "btn-secondary text-muted"}`}
       >
         {confirmEnd ? "Tap to end the game" : "End this game"}
       </button>
     );
     return (
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
-        <div className="flex items-center justify-between">
-          <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : "Mr White"}</h1>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : "Mr White"}</h1>
+            {hostEnd}
+          </div>
           <div className="flex items-center gap-3">
             <Chat roomId={id} me={session.member.id} people={people} isHost={isHost} chatOff={room.chat_mode === "off"} />
             <Forecast roomId={id} me={session.member.id} people={people} isHost={isHost} />
-            {hostEnd}
           </div>
         </div>
         {standInLine}
@@ -472,12 +474,14 @@ export function Lobby() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-12">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-3xl font-semibold">Game night</h1>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="font-display text-3xl font-semibold">Game night</h1>
+          {isHost && <span className="shrink-0 rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ink">You are host</span>}
+        </div>
         <div className="flex items-center gap-3">
           <Chat roomId={id} me={session.member.id} people={people} isHost={isHost} chatOff={room.chat_mode === "off"} />
-            <Forecast roomId={id} me={session.member.id} people={people} isHost={isHost} />
-          {isHost && <span className="rounded-full bg-go px-3 py-1.5 text-sm font-extrabold text-ink">You are host</span>}
+          <Forecast roomId={id} me={session.member.id} people={people} isHost={isHost} />
         </div>
       </div>
 
