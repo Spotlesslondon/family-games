@@ -3,7 +3,7 @@ import { applyPrivate, applyWrite } from "@/engine/apply";
 import { LOBBY, RESULTS, applyRoomAction } from "@/engine/room";
 import { seededRng } from "@/engine/rng";
 import type { GameContext, Player, PrivateMap, RoomSnapshot } from "@/engine/types";
-import { QUIZ, bandFor, levelsFor } from "./index";
+import { QUIZ, REVEAL_SECONDS, bandFor, levelsFor } from "./index";
 import { QUIZ_BANK } from "./bank";
 import type { QuizMine, QuizPublic } from "./shape";
 import "../index";
@@ -35,8 +35,11 @@ class Table {
     };
   }
 
+  /** The table's clock, in ms. Tests move it to let the answers' countdown run out. */
+  t = Date.parse("2026-11-02T20:00:00.000Z");
+
   act(actorId: string, type: string, payload?: Record<string, unknown>) {
-    const ctx: GameContext = { room: this.room, players: everyone, private: this.priv, now: "2026-11-02T20:00:00.000Z", rng: this.rng };
+    const ctx: GameContext = { room: this.room, players: everyone, private: this.priv, now: new Date(this.t).toISOString(), rng: this.rng };
     const r = applyRoomAction(ctx, { type, actorId, payload });
     if (r.ok && !r.noop) {
       this.room = applyWrite(this.room, r.write);
@@ -147,16 +150,53 @@ describe("quiz", () => {
       }
       for (const p of everyone) t.act(p.id, "answer", { round, choice: t.pickFor(p.id, p.id !== "cous") });
       expect(t.room.phase).toBe("reveal");
-      expect(t.act("kid", "next_question", { round }).ok).toBe(false);
-      t.act("mum", "next_question", { round });
-      // A double tap on Next does not skip a round.
+      // Nobody can move the table on early, the host included.
+      expect(t.act("mum", "next_question", { round }).ok).toBe(false);
+      expect(t.room.phaseEndsAt).toBe(new Date(t.t + REVEAL_SECONDS * 1000).toISOString());
+      t.t += REVEAL_SECONDS * 1000 - 1;
+      t.act("kid", "advance_if_expired");
+      expect(t.room.phase).toBe("reveal");
+      t.t += 1;
+      t.act("kid", "advance_if_expired"); // any phone may fire it once the time is up
+      // A second phone firing it too does not skip a round.
       const roundNow = t.s.round;
-      t.act("mum", "next_question", { round });
+      t.act("nan", "advance_if_expired");
       expect(t.s.round).toBe(roundNow);
       if (round < 8) expect(t.room.phase).toBe("question");
     }
     expect(t.room.phase).toBe(RESULTS);
     expect(t.s.scores).toEqual({ mum: 8, kid: 8, cous: 0, nan: 8 });
+  });
+
+  it("draws from the chosen topic, and a thin topic borrows from the mix rather than repeating", () => {
+    const t = new Table(5);
+    t.start({ topic: "animals", length: "long" });
+    expect(t.s.settings.topic).toBe("animals");
+    for (let round = 1; round <= 12; round++) {
+      for (const id of Object.values(t.s.current)) expect(QUIZ_BANK.find((q) => q.id === id)!.category).toBe("animals");
+      for (const p of everyone) t.act(p.id, "answer", { round, choice: t.pickFor(p.id, true) });
+      t.t += REVEAL_SECONDS * 1000;
+      t.act("mum", "advance_if_expired");
+    }
+    // Space has 2 easy A questions and 3 for band A in all; a 5-round quiz
+    // cannot be all Space for a 6 to 8 year old, so it borrows, never repeats.
+    const u = new Table(5);
+    u.start({ topic: "space", length: "short" });
+    const seen = new Set<string>();
+    let space = 0;
+    for (let round = 1; round <= 5; round++) {
+      const id = u.s.current.A!;
+      expect(seen.has(id)).toBe(false);
+      seen.add(id);
+      if (QUIZ_BANK.find((q) => q.id === id)!.category === "space") space++;
+      for (const p of everyone) u.act(p.id, "answer", { round, choice: u.pickFor(p.id, true) });
+      u.t += REVEAL_SECONDS * 1000;
+      u.act("mum", "advance_if_expired");
+    }
+    expect(space).toBe(3);
+    const bad = new Table(5);
+    bad.start({ topic: "dinosaurs" });
+    expect(bad.s.settings.topic).toBe("mixed");
   });
 
   it("Play again avoids the last game's questions", () => {

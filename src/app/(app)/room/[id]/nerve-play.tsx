@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { postAsMember } from "@/lib/client/session";
+import { useServerOffset } from "@/lib/client/clock";
 import { potAt, type NerveLength, type NerveLevel, type NervePace, type NervePublic } from "@/games/nerve/shape";
 import { Avatar, type Person } from "./mr-white-play";
 import { topPlaces } from "./quiz-play";
@@ -19,29 +20,6 @@ const secondary = "btn btn-secondary h-14 w-full font-display text-xl";
 const GRACE_MS = 500;
 /** How often each phone asks the server whether the pot has bust. */
 const CHECK_MS = 1000;
-
-/** The gap between this phone's clock and the server's, from the quickest of three asks. */
-function useServerOffset(): number {
-  const [offset, setOffset] = useState(0);
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      let best = { rtt: Infinity, offset: 0 };
-      for (let i = 0; i < 3; i++) {
-        const t0 = Date.now();
-        const res = await fetch("/api/time", { cache: "no-store" }).catch(() => null);
-        const t1 = Date.now();
-        const now = res ? ((await res.json().catch(() => null)) as { now?: number } | null)?.now : undefined;
-        if (typeof now === "number" && t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: now - (t0 + t1) / 2 };
-      }
-      if (live && best.rtt < Infinity) setOffset(best.offset);
-    })();
-    return () => {
-      live = false;
-    };
-  }, []);
-  return offset;
-}
 
 /** Keeps the screen on while the game is up, where the browser allows it. */
 function useWakeLock() {

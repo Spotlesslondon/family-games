@@ -6,7 +6,8 @@
 // This file must never import the question bank: the phone never holds the
 // right answer before the round is shown.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useServerOffset } from "@/lib/client/clock";
 import { message } from "@/lib/client/session";
 import type { QuizMine, QuizPublic } from "@/games/quiz/shape";
 import { Avatar, Tick, type Person } from "./mr-white-play";
@@ -31,6 +32,7 @@ const PLACE = ["", "1st", "2nd", "3rd"];
 
 export function QuizPlay({
   phase,
+  phaseEndsAt,
   state,
   mine,
   me,
@@ -39,6 +41,8 @@ export function QuizPlay({
   act,
 }: {
   phase: string;
+  /** When the answers give way to the next question; the same on every phone. */
+  phaseEndsAt: string | null;
   state: QuizPublic;
   mine: QuizMine;
   me: string;
@@ -178,14 +182,39 @@ export function QuizPlay({
       )}
 
       {error && <p role="alert" className="text-center font-bold text-alert">{error}</p>}
-      {isHost ? (
-        <button type="button" disabled={busy} onClick={() => send("next_question", { round: state.round })} className={`${primary} mt-auto`}>
-          {lastRound ? "See the final scores" : "Next question"}
-        </button>
-      ) : (
-        <p className="mt-auto text-center text-muted">Waiting for the host</p>
-      )}
+      <Countdown endsAt={phaseEndsAt} label={lastRound ? "Final scores in" : "Next question in"} fire={() => act("advance_if_expired")} />
     </section>
+  );
+}
+
+/**
+ * The shared countdown between questions. Every phone counts from the same
+ * server time, and when it reaches zero each phone asks the server to move
+ * on; the server moves the table once, whichever phone asks first. There is
+ * no button: the host cannot bring the next question forward.
+ */
+function Countdown({ endsAt, label, fire }: { endsAt: string | null; label: string; fire: () => unknown }) {
+  const offset = useServerOffset();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, []);
+  const left = endsAt ? Math.max(0, Math.ceil((Date.parse(endsAt) - (now + offset)) / 1000)) : null;
+  const due = left === 0;
+  useEffect(() => {
+    if (!due) return;
+    fire();
+    const id = setInterval(fire, 1000); // again each second until the server has moved on
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [due, endsAt]);
+  if (left === null) return null;
+  return (
+    <div className="mt-auto flex items-center justify-center gap-3 rounded-2xl bg-surface-2 px-4 py-3" role="timer" aria-live="off">
+      <span className="font-bold">{label}</span>
+      <span className="font-display text-3xl font-bold tabular-nums">{left}</span>
+    </div>
   );
 }
 
@@ -276,7 +305,7 @@ export function QuizResults({ state, me, hostId, people, act }: { state: QuizPub
           <button
             type="button"
             disabled={busy}
-            onClick={() => go("start_game", { gameId: "quiz", options: { length: state.settings?.length ?? "normal", avoid: state.asked ?? [] } })}
+            onClick={() => go("start_game", { gameId: "quiz", options: { length: state.settings?.length ?? "normal", topic: state.settings?.topic ?? "mixed", avoid: state.asked ?? [] } })}
             className={primary}
           >
             Play again

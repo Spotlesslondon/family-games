@@ -5,13 +5,25 @@
 export type QuizBandKey = "A" | "B" | "C";
 export type QuizLength = "short" | "normal" | "long";
 
+/** The topics a host can pick. "mixed" draws from every topic. The others
+ *  match the category field in the bank. Only Animals has a full set. */
+export const QUIZ_TOPICS = [
+  { key: "mixed", label: "Mixed", full: true },
+  { key: "animals", label: "Animals", full: true },
+  { key: "christmas", label: "Christmas", full: false },
+  { key: "food", label: "Food", full: false },
+  { key: "geography", label: "Places", full: false },
+  { key: "space", label: "Space", full: false },
+] as const;
+export type QuizTopic = (typeof QUIZ_TOPICS)[number]["key"];
+
 export interface QuizShown {
   text: string;
   correct: string;
 }
 
 export interface QuizPublic {
-  settings: { rounds: number; length: QuizLength };
+  settings: { rounds: number; length: QuizLength; topic?: QuizTopic };
   levels: ("easy" | "medium" | "hard")[];
   /** 1-based. */
   round: number;

@@ -21,7 +21,7 @@ import { MrWhitePlay, MrWhiteResults, type MrWhiteMine, type MrWhitePublic } fro
 import { QuizPlay, QuizResults } from "./quiz-play";
 import { NervePlay, NerveResults, type NerveOptions } from "./nerve-play";
 import type { NervePublic } from "@/games/nerve/shape";
-import type { QuizLength, QuizMine, QuizPublic } from "@/games/quiz/shape";
+import { QUIZ_TOPICS, type QuizLength, type QuizMine, type QuizPublic, type QuizTopic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
 import { Chat } from "./chat";
 import { Forecast } from "./forecast";
@@ -38,6 +38,7 @@ interface RoomRow {
   status: "open" | "closed";
   phase: string;
   current_game: string | null;
+  phase_ends_at?: string | null;
   chat_mode?: string | null;
   state: Record<string, unknown>;
 }
@@ -108,6 +109,7 @@ export function Lobby() {
   const [game, setGame] = useState<"mr-white" | "quiz" | "nerve">("mr-white");
   const [nerveOpts, setNerveOpts] = useState<NerveOptions>({ pace: "normal", length: "normal", level: "normal" });
   const [quizLength, setQuizLength] = useState<QuizLength>("normal");
+  const [quizTopic, setQuizTopic] = useState<QuizTopic>("mixed");
 
   // Every action asks the session store for a current token, so a game night
   // longer than the one-hour token keeps working.
@@ -134,7 +136,7 @@ export function Lobby() {
     const db = dbRef.current;
     if (!db) return;
     const [{ data: r }, { data: inRoom }, { data: people }, { data: secret }] = await Promise.all([
-      db.from("rooms").select("id, code, join_code, locked_at, host_member_id, status, phase, current_game, state, chat_mode").eq("id", id).maybeSingle(),
+      db.from("rooms").select("id, code, join_code, locked_at, host_member_id, status, phase, current_game, phase_ends_at, state, chat_mode").eq("id", id).maybeSingle(),
       db.from("room_members").select("member_id, connected, joined_at").eq("room_id", id).order("joined_at"),
       db.from("members").select("id, display_name, avatar").order("created_at"),
       db.from("room_private").select("state").eq("room_id", id).maybeSingle(),
@@ -424,6 +426,7 @@ export function Lobby() {
           ) : (
             <QuizPlay
               phase={room.phase}
+              phaseEndsAt={room.phase_ends_at ?? null}
               state={room.state as unknown as QuizPublic}
               mine={mine as unknown as QuizMine}
               me={session.member.id}
@@ -642,6 +645,25 @@ export function Lobby() {
                     {quizLength === "short" ? "Short, 5 questions" : quizLength === "long" ? "Long, 12 questions" : "Normal, 8 questions"}
                   </span>
                 </button>
+                <div className="flex flex-col gap-2 px-3 pb-1">
+                  <span className="font-bold">Topic</span>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="Quiz topic">
+                    {QUIZ_TOPICS.map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        aria-pressed={quizTopic === t.key}
+                        onClick={() => setQuizTopic(t.key)}
+                        className={`rounded-full border-2 border-ink px-3 py-1.5 text-sm font-bold ${quizTopic === t.key ? "bg-go" : "bg-surface"}`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  {!QUIZ_TOPICS.find((t) => t.key === quizTopic)?.full && (
+                    <span className="text-sm text-muted">A small topic for now: where it runs short, questions come from the mix.</span>
+                  )}
+                </div>
               </div>
             )}
             <button
@@ -652,7 +674,7 @@ export function Lobby() {
                   game === "nerve"
                     ? await act("start_game", { gameId: "nerve", options: { ...nerveOpts } })
                     : game === "quiz"
-                    ? await act("start_game", { gameId: "quiz", options: { length: quizLength } })
+                    ? await act("start_game", { gameId: "quiz", options: { length: quizLength, topic: quizTopic } })
                     : await act("start_game", { gameId: "mr-white", options: { mrWhite: mrWhiteOn, spoken } });
                 if (out && out.ok === false) setActionError(message(out.reason));
               }}

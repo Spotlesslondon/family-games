@@ -11,14 +11,20 @@
 //     game, and "Play again" avoids the last game's questions where it can.
 //  3. One tap answers and locks. When everyone has answered, the answers show
 //     on every phone. The host can show them early for a phone gone quiet.
-//     No timers: nobody is rushed, which suits a slow reader.
+//     No timer on answering: nobody is rushed, which suits a slow reader.
+//  3b. The answers stay up for REVEAL_SECONDS, the same on every phone, then
+//     the next question deals itself. Nobody taps Next (Joshua, 6 Nov: a host
+//     who presses Next has an edge, because they know when it is coming).
+//  3c. Topic: the host picks Mixed (default) or one topic. Only Animals has a
+//     full set at every level; a thin topic borrows from the mix where it
+//     runs short, nearest level first.
 //  4. One point for each right answer, whatever the level, because the level
 //     already matches the player. Scores are not saved yet.
 //  5. The final screen shows the top places and each player's own score. No
 //     screen singles out last place (CEO rule, 17:32 on 1 Nov).
 //
-// Not built yet, on purpose: confidence bets for spectators, topic choice,
-// a rating adjusted from results, declared expertise.
+// Not built yet, on purpose: confidence bets for spectators, a rating
+// adjusted from results, declared expertise.
 //
 // What each phone may see: its own question and its own four answers, never
 // which one is right. The right answer exists only in this server file until
@@ -28,10 +34,12 @@ import { registerGame } from "@/engine/registry";
 import { pick, shuffle } from "@/engine/rng";
 import { accept, noop, reject, type Action, type AgeBand, type GameContext, type GameModule, type TurnResult } from "@/engine/types";
 import { QUIZ_BANK, type QuizBand, type QuizLevel, type QuizQuestion } from "./bank";
-import type { QuizMine, QuizPublic, QuizShown } from "./shape";
+import { QUIZ_TOPICS, type QuizMine, type QuizPublic, type QuizShown, type QuizTopic } from "./shape";
 
 export const QUIZ = "quiz";
 export const QUIZ_LENGTHS = { short: 5, normal: 8, long: 12 } as const;
+/** How long the answers stay up before the next question deals itself. */
+export const REVEAL_SECONDS = 10;
 
 type Phase = "question" | "reveal";
 
@@ -51,16 +59,27 @@ export function levelsFor(rounds: number): QuizLevel[] {
   return Array.from({ length: rounds }, (_, i) => (i < easy ? "easy" : i < easy + medium ? "medium" : "hard"));
 }
 
-function chooseQuestion(band: QuizBand, level: QuizLevel, used: Set<string>, avoid: Set<string>, rng: () => number): QuizQuestion {
+function chooseQuestion(band: QuizBand, level: QuizLevel, topic: QuizTopic, used: Set<string>, avoid: Set<string>, rng: () => number): QuizQuestion {
   const all = QUIZ_BANK.filter((q) => q.band === band);
+  const onTopic = topic === "mixed" ? all : all.filter((q) => q.category === topic);
+  const fresh = (list: QuizQuestion[]) => list.filter((q) => !used.has(q.id));
+  // The order of preference: on topic at this level (not asked last game), on
+  // topic at this level, on topic at the nearest level, then the mix at this
+  // level, then anything unasked, then anything at all.
+  const near = NEAR_LEVELS[level];
   const tiers = [
-    all.filter((q) => q.level === level && !used.has(q.id) && !avoid.has(q.id)),
-    all.filter((q) => q.level === level && !used.has(q.id)),
-    all.filter((q) => !used.has(q.id)),
+    fresh(onTopic).filter((q) => q.level === level && !avoid.has(q.id)),
+    fresh(onTopic).filter((q) => q.level === level),
+    ...near.map((l) => fresh(onTopic).filter((q) => q.level === l)),
+    fresh(all).filter((q) => q.level === level && !avoid.has(q.id)),
+    fresh(all).filter((q) => q.level === level),
+    fresh(all),
     all,
   ];
   return pick(tiers.find((t) => t.length > 0)!, rng);
 }
+
+const NEAR_LEVELS: Record<QuizLevel, QuizLevel[]> = { easy: ["medium", "hard"], medium: ["easy", "hard"], hard: ["medium", "easy"] };
 
 /** Deal round `round` (1-based): a question per band, a private row per player. */
 function deal(ctx: GameContext, s: QuizPublic, round: number, avoid: Set<string>): { state: QuizPublic; priv: Record<string, Record<string, unknown>> } {
@@ -68,7 +87,7 @@ function deal(ctx: GameContext, s: QuizPublic, round: number, avoid: Set<string>
   const level = s.levels[round - 1];
   const current: Partial<Record<QuizBand, string>> = {};
   for (const band of new Set(Object.values(s.bandOf))) {
-    const q = chooseQuestion(band, level, used, avoid, ctx.rng);
+    const q = chooseQuestion(band, level, s.settings.topic ?? "mixed", used, avoid, ctx.rng);
     used.add(q.id);
     current[band] = q.id;
   }
@@ -105,6 +124,7 @@ function reveal(ctx: GameContext, s: QuizPublic, lastAnswer?: { id: string; choi
   }
   const write: Parameters<typeof accept>[0] = {
     phase: "reveal",
+    phaseEndsAt: new Date(Date.parse(ctx.now) + REVEAL_SECONDS * 1000).toISOString(),
     state: { ...s, scores, answered: lastAnswer ? [...s.answered, lastAnswer.id] : s.answered, last: { round: s.round, right, questions } },
   };
   if (lastAnswer) {
@@ -125,13 +145,14 @@ export const quiz: GameModule = {
   maxPlayers: 12,
   phases: {
     question: { waitsFor: "all" },
-    reveal: { waitsFor: "host" },
+    reveal: { waitsFor: "none", timerSeconds: REVEAL_SECONDS },
   },
 
   setup(ctx, options) {
     if (ctx.players.length < 2) return reject("too_few_players");
     const length = options?.length;
     const rounds = length === "short" || length === "long" ? QUIZ_LENGTHS[length] : QUIZ_LENGTHS.normal;
+    const topic: QuizTopic = QUIZ_TOPICS.some((t) => t.key === options?.topic) ? (options!.topic as QuizTopic) : "mixed";
     const avoid = new Set(Array.isArray(options?.avoid) ? (options.avoid as unknown[]).filter((x): x is string => typeof x === "string") : []);
     const bandOf: Record<string, QuizBand> = {};
     const scores: Record<string, number> = {};
@@ -140,7 +161,7 @@ export const quiz: GameModule = {
       scores[p.id] = 0;
     }
     const base: QuizPublic = {
-      settings: { rounds, length: rounds === 5 ? "short" : rounds === 12 ? "long" : "normal" },
+      settings: { rounds, length: rounds === 5 ? "short" : rounds === 12 ? "long" : "normal", topic },
       levels: levelsFor(rounds),
       round: 0,
       bandOf,
@@ -185,22 +206,18 @@ export const quiz: GameModule = {
         return reveal(ctx, s);
       }
 
-      case "next_question": {
-        if (phase !== "reveal") return noop();
-        if (!isHost) return reject("host_only");
-        if (payload.round !== s.round) return noop(); // a double tap
-        if (s.round >= s.settings.rounds) return accept({ state: { ...s, finished: true } as unknown as Record<string, unknown> });
-        const { state, priv } = deal(ctx, s, s.round + 1, new Set());
-        return accept({ phase: "question", state: state as unknown as Record<string, unknown>, private: priv });
-      }
-
       default:
         return reject("unknown_action");
     }
   },
 
-  onPhaseExpired() {
-    return noop(); // no timers in the quiz
+  // The answers have been up for REVEAL_SECONDS: everyone moves on together.
+  onPhaseExpired(ctx) {
+    if (ctx.room.phase !== "reveal") return noop();
+    const s = st(ctx);
+    if (s.round >= s.settings.rounds) return accept({ phaseEndsAt: null, state: { ...s, finished: true } as unknown as Record<string, unknown> });
+    const { state, priv } = deal(ctx, s, s.round + 1, new Set());
+    return accept({ phase: "question", phaseEndsAt: null, state: state as unknown as Record<string, unknown>, private: priv });
   },
 
   isComplete(state) {
