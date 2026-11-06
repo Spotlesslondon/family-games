@@ -20,6 +20,8 @@ import { Reconnect } from "@/app/(app)/reconnect";
 import { MrWhitePlay, MrWhiteResults, type MrWhiteMine, type MrWhitePublic } from "./mr-white-play";
 import { QuizPlay, QuizResults } from "./quiz-play";
 import { NervePlay, NerveResults, type NerveOptions } from "./nerve-play";
+import { MachinePlay, MachineResults, type MachineOptions } from "./machine-play";
+import type { MachineMine, MachinePublic } from "@/games/machine/shape";
 import type { NervePublic } from "@/games/nerve/shape";
 import { QUIZ_TOPICS, type QuizLength, type QuizMine, type QuizPublic, type QuizTopic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
@@ -106,7 +108,8 @@ export function Lobby() {
   // Mr White settings, for the host: Mr White on and typed clues by default.
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
-  const [game, setGame] = useState<"mr-white" | "quiz" | "nerve">("mr-white");
+  const [game, setGame] = useState<"mr-white" | "quiz" | "nerve" | "machine">("mr-white");
+  const [machineOpts, setMachineOpts] = useState<MachineOptions>({ pace: "normal", length: "normal" });
   const [nerveOpts, setNerveOpts] = useState<NerveOptions>({ pace: "normal", length: "normal", level: "normal" });
   const [quizLength, setQuizLength] = useState<QuizLength>("normal");
   const [quizTopic, setQuizTopic] = useState<QuizTopic>("mixed");
@@ -366,9 +369,10 @@ export function Lobby() {
   const meSeat = seats.find((s) => s.id === session.member.id);
 
   // A game is running, or has just finished: the game's own screens take over.
-  if ((room.current_game === "mr-white" || room.current_game === "quiz" || room.current_game === "nerve") && room.phase !== "lobby") {
+  if ((room.current_game === "mr-white" || room.current_game === "quiz" || room.current_game === "nerve" || room.current_game === "machine") && room.phase !== "lobby") {
     const isQuiz = room.current_game === "quiz";
     const isNerve = room.current_game === "nerve";
+    const isMachine = room.current_game === "machine";
     // While the host's phone is away, the stand-in gets the host's buttons
     // (the server checks the same rule, room engine standIn).
     // Only once the host has been away a whole minute, the same rule the server applies.
@@ -404,7 +408,7 @@ export function Lobby() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : "Mr White"}</h1>
+            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : isMachine ? "Fix the Machine" : "Mr White"}</h1>
             {hostEnd}
           </div>
           <div className="flex items-center gap-3">
@@ -414,7 +418,22 @@ export function Lobby() {
         </div>
         {standInLine}
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
-        {isNerve ? (
+        {isMachine ? (
+          room.phase === "results" ? (
+            <MachineResults state={room.state as unknown as MachinePublic} me={session.member.id} hostId={controlId} people={people} act={act} />
+          ) : (
+            <MachinePlay
+              phase={room.phase}
+              phaseEndsAt={room.phase_ends_at ?? null}
+              state={room.state as unknown as MachinePublic}
+              mine={(mine && "role" in mine ? (mine as unknown as MachineMine) : null)}
+              me={session.member.id}
+              hostId={controlId}
+              people={people}
+              act={act}
+            />
+          )
+        ) : isNerve ? (
           room.phase === "results" ? (
             <NerveResults state={room.state as unknown as NervePublic} me={session.member.id} hostId={controlId} people={people} act={act} />
           ) : (
@@ -570,11 +589,12 @@ export function Lobby() {
                 {people.get(room.host_member_id)?.name ?? "The host"} is away, so you can start the next game.
               </p>
             )}
-            <div className="grid grid-cols-3 gap-2" role="group" aria-label="Choose a game">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Choose a game">
               {([
                 ["mr-white", "Mr White"],
                 ["quiz", "The quiz"],
                 ["nerve", "Nerve"],
+                ["machine", "Fix the Machine"],
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
@@ -607,6 +627,29 @@ export function Lobby() {
                   <span>Clues</span>
                   <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{spoken ? "Said out loud" : "Typed on phones"}</span>
                 </button>
+              </div>
+            ) : game === "machine" ? (
+              <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Fix the Machine settings">
+                <p className="px-3 text-sm text-muted">One of you sees a jammed machine. Everyone else holds part of the rulebook. Talk it through and fix it before the clock runs out. Team score.</p>
+                {([
+                  ["pace", "Clock", ["relaxed", "normal", "quick"], { relaxed: "Relaxed, 4 minutes", normal: "Normal, 3 minutes", quick: "Quick, 2 minutes" }],
+                  ["length", "Rounds", ["short", "normal", "long"], { short: "1 round", normal: "3 rounds", long: "5 rounds" }],
+                ] as const).map(([key, label, order, names]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() =>
+                      setMachineOpts((o) => {
+                        const list = order as readonly string[];
+                        return { ...o, [key]: list[(list.indexOf(o[key]) + 1) % list.length] };
+                      })
+                    }
+                    className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+                  >
+                    <span>{label}</span>
+                    <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{(names as Record<string, string>)[machineOpts[key]]}</span>
+                  </button>
+                ))}
               </div>
             ) : game === "nerve" ? (
               <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Nerve settings">
@@ -668,10 +711,12 @@ export function Lobby() {
             )}
             <button
               type="button"
-              disabled={here < (game === "mr-white" ? 3 : 2)}
+              disabled={here < (game === "mr-white" || game === "machine" ? 3 : 2)}
               onClick={async () => {
                 const out =
-                  game === "nerve"
+                  game === "machine"
+                    ? await act("start_game", { gameId: "machine", options: { ...machineOpts } })
+                    : game === "nerve"
                     ? await act("start_game", { gameId: "nerve", options: { ...nerveOpts } })
                     : game === "quiz"
                     ? await act("start_game", { gameId: "quiz", options: { length: quizLength, topic: quizTopic } })
@@ -680,7 +725,11 @@ export function Lobby() {
               }}
               className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
-              {game === "nerve"
+              {game === "machine"
+                ? here < 3
+                  ? "Fix the Machine needs 3 players"
+                  : "Fix the Machine"
+                : game === "nerve"
                 ? here < 2
                   ? "Nerve needs 2 players"
                   : "Play Nerve"

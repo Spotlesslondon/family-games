@@ -178,6 +178,8 @@ const MESSAGES: Record<string, string> = {
   no_forecast: "There is no Forecast running.",
   card_not_found: "That card has gone.",
   card_closed: "That card has already been settled.",
+  not_the_fixer: "Only the Fixer can touch the machine.",
+  unknown_part: "That part is not on this machine.",
   self_call: "You cannot call yourself. Pick someone else.",
   bad_call: "That call did not go through. Please tap it again.",
   chat_quick_only: "Chat is quick replies only tonight.",

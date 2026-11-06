@@ -3,3 +3,4 @@
 import "./mr-white";
 import "./quiz";
 import "./nerve";
+import "./machine";
