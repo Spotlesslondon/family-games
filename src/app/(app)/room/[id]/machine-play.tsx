@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useServerOffset } from "@/lib/client/clock";
 import { message } from "@/lib/client/session";
-import { MAX_WOBBLES, PART_NAMES, type LampColour, type MachineLength, type MachineMine, type MachinePace, type MachinePublic, type MachineView, type PartKey, type Pattern, type Picture } from "@/games/machine/shape";
+import { LEVELS, MAX_WOBBLES, PART_NAMES, type DialSymbol, type LampColour, type MachineLength, type MachineLevel, type MachineMine, type MachinePace, type MachinePublic, type MachineView, type PartKey, type Pattern, type Picture } from "@/games/machine/shape";
 import type { Person } from "./mr-white-play";
 
 type Act = (type: string, payload?: Record<string, unknown>) => Promise<{ ok?: boolean; reason?: string } | null>;
@@ -64,7 +64,9 @@ export function MachinePlay({
 
   const header = (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-sm font-bold tracking-widest text-muted">ROUND {s.round} OF {s.settings.rounds}</span>
+      <span className="text-sm font-bold tracking-widest text-muted">
+        ROUND {s.round} OF {s.settings.rounds} · LEVEL {s.settings.level}
+      </span>
       <Wobbles n={s.wobbles} />
     </div>
   );
@@ -94,6 +96,7 @@ export function MachinePlay({
   }
 
   const fixerName = name(s.fixerId);
+  const hints = LEVELS[s.settings.level]?.hints ?? true;
   const clock = <Clock endsAt={phaseEndsAt} fire={() => act("advance_if_expired")} />;
 
   if (mine?.role === "fixer" && mine.round === s.round) {
@@ -103,17 +106,12 @@ export function MachinePlay({
         {clock}
         <h2 className="font-display text-3xl font-bold leading-tight">You are the Fixer</h2>
         <p className="text-muted">Say what you see. The others have the rulebook, but they cannot see the machine. Serial number {mine.view.serial}.</p>
-        <p className="text-sm font-bold">
-          {fixed} of {total} fixed. Who has which rule:{" "}
-          {Object.entries(s.holders)
-            .map(([id, parts]) => `${name(id)}: ${parts.map((p) => PART_NAMES[p].toLowerCase()).join(" and ")}`)
-            .join("; ")}
-          .
-        </p>
+        <p className="text-sm font-bold">{fixed} of {total} fixed.</p>
+        <CardIndex cards={s.cards} name={name} me={me} />
         {error && <p role="alert" className="text-center font-bold text-alert">{error}</p>}
-        {s.parts.lamps && <Lamps view={mine.view} fixed={s.parts.lamps === "fixed"} busy={busy} onTry={(a) => attempt("lamps", a)} />}
-        {s.parts.pictures && <PictureRow view={mine.view} fixed={s.parts.pictures === "fixed"} busy={busy} onTry={(a) => attempt("pictures", a)} />}
-        {s.parts.dial && <Dial view={mine.view} fixed={s.parts.dial === "fixed"} busy={busy} onTry={(a) => attempt("dial", a)} />}
+        {s.parts.lamps && <Lamps view={mine.view} hints={hints} fixed={s.parts.lamps === "fixed"} busy={busy} onTry={(a) => attempt("lamps", a)} />}
+        {s.parts.pictures && <PictureRow view={mine.view} hints={hints} fixed={s.parts.pictures === "fixed"} busy={busy} onTry={(a) => attempt("pictures", a)} />}
+        {s.parts.dial && <Dial view={mine.view} hints={hints} fixed={s.parts.dial === "fixed"} busy={busy} onTry={(a) => attempt("dial", a)} />}
       </section>
     );
   }
@@ -126,6 +124,7 @@ export function MachinePlay({
         <h2 className="font-display text-3xl font-bold leading-tight">You hold part of the rulebook</h2>
         <p className="text-muted">{fixerName} is the Fixer and can see the machine. Read your rules out loud. Do not show your phone.</p>
         <p className="text-sm font-bold">{fixed} of {total} fixed.</p>
+        <CardIndex cards={s.cards} name={name} me={me} />
         {mine.cards.map((c, i) => (
           <div key={i} className="card flex flex-col gap-2 px-5 py-4">
             <span className="text-xs font-bold tracking-widest text-muted">{c.title.toUpperCase()}</span>
@@ -148,6 +147,21 @@ export function MachinePlay({
       <h2 className="font-display text-3xl font-semibold leading-tight">Watching this one</h2>
       <p className="text-muted">{fixerName} is fixing the machine. {fixed} of {total} fixed.</p>
     </section>
+  );
+}
+
+/** The rulebook's index: every card and who holds it. Everyone sees this; only a holder sees the words. */
+function CardIndex({ cards, name, me }: { cards: MachinePublic["cards"]; name: (id: string) => string; me: string }) {
+  if (!cards?.length) return null;
+  return (
+    <div className="flex flex-col gap-1 rounded-2xl bg-surface-2 px-4 py-3">
+      <span className="text-xs font-bold tracking-widest text-muted">THE RULEBOOK</span>
+      {cards.map((c) => (
+        <p key={c.title} className="text-sm">
+          <span className="font-bold">{c.title}:</span> {c.holders.map((h) => (h === me ? "you" : name(h))).join(" and ")}
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -199,7 +213,7 @@ function Clock({ endsAt, fire }: { endsAt: string | null; fire: () => unknown })
 
 const PANEL = "rounded-3xl border-4 border-ink bg-[#3b3f46] p-4 text-white shadow-[6px_6px_0_#111]";
 
-function Lamps({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean; busy: boolean; onTry: (a: number[]) => Promise<boolean> }) {
+function Lamps({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: boolean; fixed: boolean; busy: boolean; onTry: (a: number[]) => Promise<boolean> }) {
   const [pressed, setPressed] = useState<number[]>([]);
   const lamps = view.lamps ?? [];
   async function press(i: number) {
@@ -212,7 +226,7 @@ function Lamps({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean
     }
   }
   return (
-    <Part title={PART_NAMES.lamps} fixed={fixed} hint={fixed ? "" : "Press the lamps in the right order. Say which are lit and what colour they are."}>
+    <Part title={PART_NAMES.lamps} fixed={fixed} hint={fixed || !hints ? "" : "Press the lamps in the right order. Say which are lit and what colour they are."}>
       <div className={`${PANEL} flex justify-around`}>
         {lamps.map((l, i) => {
           const n = pressed.indexOf(i);
@@ -264,7 +278,7 @@ function Lamps({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean
   );
 }
 
-function PictureRow({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean; busy: boolean; onTry: (a: Picture[]) => Promise<boolean> }) {
+function PictureRow({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: boolean; fixed: boolean; busy: boolean; onTry: (a: Picture[]) => Promise<boolean> }) {
   const [tapped, setTapped] = useState<Picture[]>([]);
   const pics = view.pictures ?? [];
   async function tap(p: Picture) {
@@ -277,7 +291,7 @@ function PictureRow({ view, fixed, busy, onTry }: { view: MachineView; fixed: bo
     }
   }
   return (
-    <Part title={PART_NAMES.pictures} fixed={fixed} hint={fixed ? "" : "Press the picture keys in the right order. Say what pictures you have."}>
+    <Part title={PART_NAMES.pictures} fixed={fixed} hint={fixed || !hints ? "" : "Press the picture keys in the right order. Say what pictures you have."}>
       <div className={`${PANEL} flex justify-around`}>
         {pics.map((p) => {
           const n = tapped.indexOf(p);
@@ -301,42 +315,77 @@ function PictureRow({ view, fixed, busy, onTry }: { view: MachineView; fixed: bo
   );
 }
 
-/** A knob with six positions. Tap a number, or the knob itself to click on one, and it turns there. */
-function Dial({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean; busy: boolean; onTry: (a: number) => Promise<boolean> }) {
+/**
+ * A knob with six positions, labelled with numbers or symbols. The combination
+ * has one to three turns: the patterns show in a row, the Fixer turns the knob
+ * to each in order and sets it, and the whole sequence is tried at once.
+ */
+function Dial({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: boolean; fixed: boolean; busy: boolean; onTry: (a: number[]) => Promise<boolean> }) {
   const [setting, setSetting] = useState<number | null>(null);
-  const pattern = view.dial?.pattern ?? "dots";
-  const shown = setting ?? 1;
-  // Position 1 is at the top; each click is 60 degrees clockwise.
+  const [done, setDone] = useState<number[]>([]);
+  const dial = view.dial ?? { patterns: ["dots"] as Pattern[], labels: "numbers" as const };
+  const turns = dial.patterns.length;
+  const turn = done.length; // 0-based index of the turn being set
+  const shown = setting ?? done[done.length - 1] ?? 1;
   const angle = (shown - 1) * 60;
-  const turnTo = (n: number) => {
-    if (fixed || busy) return;
-    setSetting(n);
+  const label = (pos: number) => (dial.labels === "symbols" && dial.symbols ? dial.symbols[pos - 1] : String(pos));
+  const reset = () => {
+    setSetting(null);
+    setDone([]);
   };
+  async function set() {
+    if (setting === null) return;
+    const next = [...done, setting];
+    if (next.length < turns) {
+      setDone(next);
+      setSetting(null);
+      return;
+    }
+    await onTry(next);
+    reset();
+  }
+  const hint = fixed || !hints ? "" : turns === 1 ? `The dial shows ${dial.patterns[0]}. Turn it to the right place, then set it.` : `A ${turns}-turn combination. Turn to each pattern's place in order, setting each one.`;
   return (
-    <Part title={PART_NAMES.dial} fixed={fixed} hint={fixed ? "" : `The dial shows ${pattern}. Turn it to the right number, then set it.`}>
-      <div className={`${PANEL} flex items-center justify-center gap-5`}>
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-[10px] font-bold tracking-widest text-white/70">PATTERN</span>
-          <span className="flex h-16 w-16 items-center justify-center rounded-xl border-[3px] border-ink bg-[#f7f3e8]" aria-label={`pattern: ${pattern}`}>
-            <PatternIcon p={pattern} />
-          </span>
-          <span className="text-xs font-bold">{pattern}</span>
+    <Part title={PART_NAMES.dial} fixed={fixed} hint={hint}>
+      <div className={`${PANEL} flex flex-col items-center gap-3`}>
+        <div className="flex items-center gap-3">
+          {dial.patterns.map((p, i) => (
+            <div key={i} className="flex flex-col items-center gap-1">
+              <span className="text-[10px] font-bold tracking-widest text-white/70">{turns === 1 ? "PATTERN" : `TURN ${i + 1}`}</span>
+              <span
+                className={`flex h-14 w-14 items-center justify-center rounded-xl border-[3px] bg-[#f7f3e8] ${i === turn && !fixed ? "border-go shadow-[0_0_0_3px_#ffd23f]" : i < turn ? "border-[#3da35d] opacity-70" : "border-ink"}`}
+                aria-label={`turn ${i + 1}: ${p}${i < turn ? ", set" : ""}`}
+              >
+                <PatternIcon p={p} />
+              </span>
+              <span className="text-xs font-bold">{p}</span>
+            </div>
+          ))}
+          {dial.light && (
+            <div className="flex flex-col items-center gap-1" aria-label={`light: ${dial.light}`}>
+              <span className="text-[10px] font-bold tracking-widest text-white/70">LIGHT</span>
+              <span className="flex h-14 w-14 items-center justify-center">
+                <span className="h-8 w-8 rounded-full border-[3px] border-ink" style={{ background: dial.light === "green" ? "#3da35d" : dial.light === "amber" ? "#f4c542" : "#e4572e", boxShadow: "0 0 14px 2px " + (dial.light === "green" ? "#3da35d" : dial.light === "amber" ? "#f4c542" : "#e4572e") }} />
+              </span>
+              <span className="text-xs font-bold">{dial.light}</span>
+            </div>
+          )}
         </div>
-        <div className="relative h-44 w-44" role="group" aria-label={`Dial, pointing at ${shown}`}>
-          <svg viewBox="0 0 200 200" className="h-44 w-44" aria-hidden>
+        <div className="relative h-48 w-48" role="group" aria-label={`Dial, pointing at ${label(shown)}`}>
+          <svg viewBox="0 0 200 200" className="h-48 w-48" aria-hidden>
             <circle cx="100" cy="100" r="96" fill="#2a2d33" stroke="#111" strokeWidth="3" />
             {[1, 2, 3, 4, 5, 6].map((n) => {
               const a = ((n - 1) * 60 - 90) * (Math.PI / 180);
               return <line key={n} x1={100 + Math.cos(a) * 78} y1={100 + Math.sin(a) * 78} x2={100 + Math.cos(a) * 88} y2={100 + Math.sin(a) * 88} stroke="#f7f3e8" strokeWidth="4" strokeLinecap="round" />;
             })}
             <g className="machine-knob" style={{ transform: `rotate(${angle}deg)` }}>
-              <circle cx="100" cy="100" r="60" fill="#c9ccd2" stroke="#111" strokeWidth="3" />
-              <circle cx="100" cy="100" r="48" fill="#e8eaee" stroke="#111" strokeWidth="2" />
+              <circle cx="100" cy="100" r="58" fill="#c9ccd2" stroke="#111" strokeWidth="3" />
+              <circle cx="100" cy="100" r="46" fill="#e8eaee" stroke="#111" strokeWidth="2" />
               {Array.from({ length: 24 }, (_, i) => {
                 const a = (i * 15 * Math.PI) / 180;
-                return <line key={i} x1={100 + Math.cos(a) * 50} y1={100 + Math.sin(a) * 50} x2={100 + Math.cos(a) * 58} y2={100 + Math.sin(a) * 58} stroke="#111" strokeWidth="2" />;
+                return <line key={i} x1={100 + Math.cos(a) * 48} y1={100 + Math.sin(a) * 48} x2={100 + Math.cos(a) * 56} y2={100 + Math.sin(a) * 56} stroke="#111" strokeWidth="2" />;
               })}
-              <polygon points="100,38 92,58 108,58" fill="#b3261e" stroke="#111" strokeWidth="2" />
+              <polygon points="100,40 92,60 108,60" fill="#b3261e" stroke="#111" strokeWidth="2" />
               <circle cx="100" cy="100" r="8" fill="#111" />
             </g>
           </svg>
@@ -350,31 +399,31 @@ function Dial({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean;
                 type="button"
                 disabled={fixed || busy}
                 aria-pressed={setting === n}
-                onClick={() => turnTo(n)}
+                aria-label={`turn to ${label(n)}`}
+                onClick={() => setSetting(n)}
                 style={{ left: `${x}%`, top: `${y}%` }}
-                className={`absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-ink font-display text-base font-bold ${
-                  setting === n ? "bg-go text-ink" : "bg-[#f7f3e8] text-ink"
-                }`}
+                className={`absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-ink font-display text-base font-bold ${setting === n ? "bg-go text-ink" : "bg-[#f7f3e8] text-ink"}`}
               >
-                {n}
+                {dial.labels === "symbols" && dial.symbols ? <SymbolIcon s={dial.symbols[n - 1]} /> : n}
               </button>
             );
           })}
         </div>
+        {dial.labels === "symbols" && dial.symbols && (
+          <p className="text-center text-xs text-white/80">Round the knob: {dial.symbols.join(", ")}.</p>
+        )}
       </div>
       {!fixed && (
-        <button
-          type="button"
-          disabled={busy || setting === null}
-          onClick={async () => {
-            if (setting === null) return;
-            await onTry(setting);
-            setSetting(null);
-          }}
-          className={`${secondary} h-12 w-auto self-start px-5 text-base disabled:opacity-60`}
-        >
-          {setting === null ? "Turn the dial first" : `Set the dial to ${setting}`}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" disabled={busy || setting === null} onClick={set} className={`${secondary} h-12 w-auto px-5 text-base disabled:opacity-60`}>
+            {setting === null ? (turns === 1 ? "Turn the dial first" : `Turn ${turn + 1} of ${turns}: turn the dial`) : turns === 1 ? `Set the dial to ${label(setting)}` : `Set turn ${turn + 1} of ${turns} to ${label(setting)}`}
+          </button>
+          {done.length > 0 && (
+            <button type="button" onClick={reset} className="text-sm font-bold text-pick underline">
+              Start the combination again
+            </button>
+          )}
+        </div>
       )}
     </Part>
   );
@@ -464,6 +513,57 @@ function Icon({ p }: { p: Picture }) {
   }
 }
 
+// The knob's symbols at the harder levels. Original, simple, drawn here.
+function SymbolIcon({ s }: { s: DialSymbol }) {
+  const c = "#1d1a14";
+  switch (s) {
+    case "anchor":
+      return (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+          <circle cx="12" cy="5" r="2.5" fill="none" stroke={c} strokeWidth="2" />
+          <path d="M12 7.5v12M5 13c0 4 3 6.5 7 6.5s7-2.5 7-6.5M7 13H3m18 0h-4" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    case "bolt":
+      return (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+          <path d="M13 2 5 13h6l-1 9 9-12h-6z" fill="#f4c542" stroke={c} strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      );
+    case "cog":
+      return (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+          {Array.from({ length: 8 }, (_, i) => {
+            const a = (i * Math.PI) / 4;
+            return <line key={i} x1={12 + Math.cos(a) * 6} y1={12 + Math.sin(a) * 6} x2={12 + Math.cos(a) * 10} y2={12 + Math.sin(a) * 10} stroke={c} strokeWidth="3" strokeLinecap="round" />;
+          })}
+          <circle cx="12" cy="12" r="6" fill="#c9ccd2" stroke={c} strokeWidth="2" />
+          <circle cx="12" cy="12" r="2" fill={c} />
+        </svg>
+      );
+    case "flag":
+      return (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+          <path d="M6 22V3" stroke={c} strokeWidth="2.2" strokeLinecap="round" />
+          <path d="M6 4h12l-3 4 3 4H6z" fill="#e4572e" stroke={c} strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      );
+    case "leaf":
+      return (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+          <path d="M20 4C9 4 4 10 4 20c10 0 16-5 16-16z" fill="#3da35d" stroke={c} strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M4 20 16 8" stroke={c} strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      );
+    case "drop":
+      return (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+          <path d="M12 2c4 6 7 9 7 13a7 7 0 0 1-14 0c0-4 3-7 7-13z" fill="#2e6fe4" stroke={c} strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      );
+  }
+}
+
 function PatternIcon({ p }: { p: Pattern }) {
   const c = "#1d1a14";
   switch (p) {
@@ -534,7 +634,7 @@ export function MachineResults({ state: s, me, hostId, act }: { state: MachinePu
       </p>
       {me === hostId ? (
         <div className="mt-auto flex flex-col gap-3">
-          <button type="button" disabled={busy} onClick={() => go("start_game", { gameId: "machine", options: { pace: s.settings.pace, length: s.settings.length } })} className={primary}>
+          <button type="button" disabled={busy} onClick={() => go("start_game", { gameId: "machine", options: { pace: s.settings.pace, length: s.settings.length, level: s.settings.level } })} className={primary}>
             Play again
           </button>
           <button type="button" disabled={busy} onClick={() => go("back_to_lobby")} className={secondary}>
@@ -551,4 +651,5 @@ export function MachineResults({ state: s, me, hostId, act }: { state: MachinePu
 export interface MachineOptions {
   pace: MachinePace;
   length: MachineLength;
+  level: MachineLevel;
 }

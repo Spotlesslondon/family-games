@@ -1,43 +1,44 @@
 // Fix the Machine, version 0 (concept claude/co-op-machine-v0.md; Joshua, 6 Nov
-// 2026: "lets run first draft for that"). A first draft for the family table.
+// 2026: "lets run first draft for that", then "we don't think in terms of age,
+// just difficulty" and "minimum of 2 players"). A first draft for the table.
 //
 // Rules (the CEO seat owns them; each is one place in this file or shape.ts):
 //  1. One player is the Fixer and sees a jammed machine. Everyone else is a
-//     Helper and holds part of the rulebook on their own phone. Nobody has the
-//     whole book, and the machine is on nobody's phone but the Fixer's.
-//  2. The machine has parts: a row of lamps, a row of pictures, and a dial. A
-//     Fixer aged 6 to 8 gets two parts (lamps and pictures); 9 to 11 gets all
-//     three; 12 and over gets a twist on the dial as well.
-//  3. The Fixer fixes a part by pressing the lamps in the right order, tapping
-//     the pictures in the right order, or setting the dial. A wrong try is a
-//     wobble. Three wobbles and the machine pops. A clock runs; when it runs
-//     out the machine pops too.
-//  4. Team score only: a point for each part fixed, and one more for fixing
-//     the whole machine with no wobble. The Fixer rotates each round.
-//  5. The rulebook pieces go to the Helpers round-robin, the picture card to
-//     the youngest Helper where there is one. With more Helpers than pieces,
-//     two Helpers hold the same piece.
+//     Helper and holds part of the rulebook on their own phone. With one
+//     Helper, they hold all of it. Every Helper sees the rulebook's index
+//     (every card and who holds it); only the holder sees the words.
+//  2. The machine has parts: a row of lamps, a row of pictures, a dial. What
+//     each part asks for is set by the level the host picked (shape.ts,
+//     LEVELS), never by anyone's age.
+//  3. The Fixer fixes a part by pressing the lamps in the right order, pressing
+//     the picture keys in the right order, or turning the dial to the right
+//     number (or numbers, at the combination levels). A wrong try is a wobble.
+//     Three wobbles and the machine pops. When the clock runs out it pops too.
+//  4. Team score: a point per part fixed, one more for fixing the whole
+//     machine with no wobble. The Fixer rotates each round.
 //
 // Fairness, decided on the server: the whole machine, answers included, is
 // generated from a hidden seed (a keyed hash of the round's public nonce), so
 // the answers never leave the server. Each phone gets only its own view.
-//
-// Not built in v0: the TV view, hints, sounds, the machine popping with
-// confetti. Content on screen is placeholder copy for the CEO seat and Joshua.
 
 import { registerGame } from "@/engine/registry";
 import { seededRng, shuffle } from "@/engine/rng";
-import { accept, noop, reject, type AgeBand, type GameContext, type GameModule, type TurnResult } from "@/engine/types";
+import { accept, noop, reject, type GameContext, type GameModule, type TurnResult } from "@/engine/types";
 import {
-  DIAL_SETTINGS,
+  DIAL_SYMBOLS,
   LAMP_COLOURS,
+  LEVELS,
+  LIGHTS,
   MACHINE_CLOCK,
   MACHINE_ROUNDS,
   MAX_WOBBLES,
   PATTERNS,
   PICTURES,
+
   type LampColour,
+  type LevelSpec,
   type MachineLength,
+  type MachineLevel,
   type MachineMine,
   type MachinePace,
   type MachinePublic,
@@ -50,87 +51,111 @@ import {
 
 export const MACHINE = "machine";
 
-type Tier = "A" | "B" | "C";
-const tierFor = (age: AgeBand | undefined): Tier => (age === "6-8" ? "A" : age === "9-11" ? "B" : "C");
-const AGE_ORDER: Record<string, number> = { "6-8": 0, "9-11": 1, "12-15": 2, "16+": 3 };
-
 /** The machine as the server knows it: the Fixer's view, the cards, and the answers. */
 export interface Machine {
   view: MachineView;
   cards: RuleCard[];
-  answers: { lamps?: number[]; pictures?: Picture[]; dial?: number };
+  answers: { lamps: number[]; pictures: Picture[]; dial: number[] };
 }
-
-const LAMP_RULES = [
-  {
-    key: "lit-first",
-    lines: ["Press the lamps that are LIT first, left to right.", "Then press the lamps that are OFF, left to right."],
-    order: (lamps: { lit: boolean }[]) => [...idx(lamps, (l) => l.lit), ...idx(lamps, (l) => !l.lit)],
-  },
-  {
-    key: "off-first-reverse",
-    lines: ["Press the lamps that are OFF first, right to left.", "Then press the lamps that are LIT, left to right."],
-    order: (lamps: { lit: boolean }[]) => [...idx(lamps, (l) => !l.lit).reverse(), ...idx(lamps, (l) => l.lit)],
-  },
-  {
-    key: "colour-order",
-    lines: [] as string[], // filled per machine
-    order: (lamps: { colour: LampColour }[], colours?: LampColour[]) =>
-      colours!.map((c) => lamps.findIndex((l) => l.colour === c)).filter((i) => i >= 0),
-  },
-] as const;
 
 function idx<T>(list: T[], keep: (x: T) => boolean): number[] {
   return list.map((x, i) => (keep(x) ? i : -1)).filter((i) => i >= 0);
 }
 
-/** Build the round's machine from its seed. The same seed always gives the same machine. */
-export function buildMachine(seed: number, tier: Tier): Machine {
+const LAMP_RULES = [
+  {
+    lines: ["Press the lamps that are LIT first, left to right.", "Then press the lamps that are OFF, left to right."],
+    order: (lamps: { lit: boolean; colour: LampColour }[]) => [...idx(lamps, (l) => l.lit), ...idx(lamps, (l) => !l.lit)],
+  },
+  {
+    lines: ["Press the lamps that are OFF first, right to left.", "Then press the lamps that are LIT, left to right."],
+    order: (lamps: { lit: boolean; colour: LampColour }[]) => [...idx(lamps, (l) => !l.lit).reverse(), ...idx(lamps, (l) => l.lit)],
+  },
+  {
+    lines: [] as string[],
+    order: (lamps: { lit: boolean; colour: LampColour }[], colours?: LampColour[]) => colours!.map((c) => lamps.findIndex((l) => l.colour === c)).filter((i) => i >= 0),
+  },
+];
+
+/** One click on from a position (1 to 6), or back. */
+const click = (pos: number, by: number) => ((((pos - 1 + by) % 6) + 6) % 6) + 1;
+
+/** Build the round's machine from its seed. The same seed and level always give the same machine. */
+export function buildMachine(seed: number, level: MachineLevel): Machine {
+  const spec: LevelSpec = LEVELS[level];
   const rng = seededRng(seed);
   const view: MachineView = { serial: 100 + Math.floor(rng() * 900) };
   const cards: RuleCard[] = [];
-  const answers: Machine["answers"] = {};
 
-  // Lamps: 3 for the youngest Fixer, else 4, with at least one lit and one off.
-  const n = tier === "A" ? 3 : 4;
-  const colours = shuffle([...LAMP_COLOURS], rng).slice(0, n);
+  // Lamps: some lit, at least one lit and one off.
+  const colours = shuffle([...LAMP_COLOURS], rng).slice(0, spec.lamps);
   let lit: boolean[];
   do lit = colours.map(() => rng() < 0.5);
   while (!lit.some(Boolean) || lit.every(Boolean));
   view.lamps = colours.map((colour, i) => ({ colour, lit: lit[i] }));
-  const ruleIndex = tier === "A" ? (rng() < 0.5 ? 0 : 2) : Math.floor(rng() * LAMP_RULES.length);
-  const rule = LAMP_RULES[ruleIndex];
-  if (rule.key === "colour-order") {
+  const ruleIndex = spec.lampRules[Math.floor(rng() * spec.lampRules.length)];
+  let lampsAnswer: number[];
+  if (ruleIndex === 2) {
     const order = shuffle([...LAMP_COLOURS], rng);
     cards.push({ part: "lamps", title: "The lamps", lines: ["Press the lamps in this colour order:", order.join(", ") + ".", "Skip any colour the machine does not have."] });
-    answers.lamps = rule.order(view.lamps, order);
+    lampsAnswer = LAMP_RULES[2].order(view.lamps, order);
   } else {
-    cards.push({ part: "lamps", title: "The lamps", lines: [...rule.lines] });
-    answers.lamps = rule.order(view.lamps);
+    cards.push({ part: "lamps", title: "The lamps", lines: [...LAMP_RULES[ruleIndex].lines] });
+    lampsAnswer = LAMP_RULES[ruleIndex].order(view.lamps);
   }
 
   // Pictures: the card lists every picture in an order; the machine shows some of them.
   const order = shuffle([...PICTURES], rng);
-  const shown = shuffle(order.slice(), rng).slice(0, tier === "A" ? 3 : 4);
+  const shown = shuffle(order.slice(), rng).slice(0, spec.pictures);
   view.pictures = shown;
-  answers.pictures = order.filter((p) => shown.includes(p));
-  cards.push({ part: "pictures", title: "The picture row", lines: ["Tap the pictures in this order:", order.join(", ") + ".", "Skip any picture that is not on the machine."] });
+  const picturesAnswer = order.filter((p) => shown.includes(p));
+  cards.push({ part: "pictures", title: "The picture row", lines: ["Press the picture keys in this order:", order.join(", ") + ".", "Skip any picture that is not on the machine."] });
 
-  // Dial: a pattern on the machine, a table on the card. Two halves of the table.
-  if (tier !== "A") {
-    const settings = shuffle([...DIAL_SETTINGS], rng);
-    const table = PATTERNS.map((pattern, i) => ({ pattern, setting: settings[i] }));
-    const pattern: Pattern = PATTERNS[Math.floor(rng() * PATTERNS.length)];
-    view.dial = { pattern };
-    let setting = table.find((t) => t.pattern === pattern)!.setting;
-    const twist = tier === "C";
-    if (twist && view.serial % 2 === 1) setting = (setting % 6) + 1;
-    answers.dial = setting;
-    const twistLine = "If the serial number is ODD, turn the dial one more click. 6 goes round to 1.";
-    cards.push({ part: "dial", title: "The dial, part 1 of 2", lines: ["Set the dial by the pattern:", ...table.slice(0, 3).map((t) => `${t.pattern}: ${t.setting}`), ...(twist ? [twistLine] : [])] });
-    cards.push({ part: "dial", title: "The dial, part 2 of 2", lines: ["Set the dial by the pattern:", ...table.slice(3).map((t) => `${t.pattern}: ${t.setting}`), ...(twist ? [twistLine] : [])] });
+  // Dial: one pattern per turn on the machine; tables on the cards.
+  const symbols = spec.dialLabels === "symbols" ? shuffle([...DIAL_SYMBOLS], rng) : undefined;
+  const labelOf = (pos: number) => (symbols ? symbols[pos - 1] : String(pos));
+  const patterns: Pattern[] = shuffle([...PATTERNS], rng).slice(0, spec.dialTurns);
+  const light = spec.modifier === "light" ? LIGHTS[Math.floor(rng() * LIGHTS.length)] : undefined;
+  view.dial = { patterns, labels: spec.dialLabels, symbols, light };
+  const litCount = lit.filter(Boolean).length;
+  const makeTable = () => {
+    const settings = shuffle([1, 2, 3, 4, 5, 6], rng);
+    return PATTERNS.map((pattern, i) => ({ pattern, pos: settings[i] }));
+  };
+  // Which tables exist, and which one this machine really uses.
+  const current = spec.manuals === 2 ? (rng() < 0.5 ? "A" : "B") : "A";
+  const manuals = (spec.manuals === 2 ? ["A", "B"] : ["A"]) as ("A" | "B")[];
+  const useSecond = spec.dependency && litCount > 2;
+  let answerTable: { pattern: Pattern; pos: number }[] | null = null;
+  const modLines: string[] = [];
+  if (spec.modifier === "light") modLines.push("Then look at the light under the dial: green, leave it; amber, one click on; red, one click back. The last position and the first are neighbours.");
+  if (spec.modifier === "serial") modLines.push("Then if the serial number is ODD, one click on. The last position and the first are neighbours.");
+  for (const manual of manuals) {
+    const tables = spec.dependency ? [makeTable(), makeTable()] : [makeTable()];
+    if (manual === current) answerTable = tables[useSecond ? 1 : 0];
+    const manualName = spec.manuals === 2 ? `Manual ${manual}` : "The dial";
+    const head = spec.dependency ? ["Use the FIRST table unless more than two lamps are lit; then use the SECOND table."] : [];
+    const rows = (t: { pattern: Pattern; pos: number }[], from: number, to: number) => t.slice(from, to).map((r) => `${r.pattern}: ${labelOf(r.pos)}`);
+    const halves: [number, number][] = [
+      [0, 3],
+      [3, 6],
+    ];
+    halves.forEach(([from, to], h) => {
+      const lines = [...head];
+      if (spec.dependency) {
+        lines.push("First table:", ...rows(tables[0], from, to), "Second table:", ...rows(tables[1], from, to));
+      } else {
+        lines.push("Set the dial by the pattern:", ...rows(tables[0], from, to));
+      }
+      lines.push(...modLines);
+      cards.push({ part: "dial", title: `${manualName}, part ${h + 1} of 2`, lines });
+    });
   }
-  return { view, cards, answers };
+  if (spec.manuals === 2) cards.push({ part: "dial", title: "The service tag", lines: [`This machine runs on Manual ${current}. Ignore the other manual.`] });
+  const shift = spec.modifier === "light" ? (light === "amber" ? 1 : light === "red" ? -1 : 0) : spec.modifier === "serial" && view.serial % 2 === 1 ? 1 : 0;
+  const dialAnswer = patterns.map((p) => click(answerTable!.find((r) => r.pattern === p)!.pos, shift));
+
+  return { view, cards, answers: { lamps: lampsAnswer, pictures: picturesAnswer, dial: dialAnswer } };
 }
 
 function seedOf(ctx: GameContext, s: MachinePublic): number {
@@ -150,23 +175,25 @@ const pub = (s: MachinePublic) => s as unknown as Record<string, unknown>;
 /** Deal a round: pick the Fixer, build the machine, hand out the views. */
 function dealRound(ctx: GameContext, s: MachinePublic, round: number): TurnResult {
   const fixerId = s.team[(s.fixerStart + round - 1) % s.team.length];
-  const fixer = ctx.players.find((p) => p.id === fixerId);
-  const next: MachinePublic = { ...s, round, nonce: nonce(ctx.rng), fixerId, parts: {}, wobbles: 0, holders: {}, last: s.last };
-  const m = buildMachine(seedOf(ctx, next), tierFor(fixer?.ageBand));
-  for (const c of m.cards) next.parts[c.part] = "open";
-  // Helpers, youngest first, so the picture card lands with a young reader.
-  const helpers = ctx.players.filter((p) => p.id !== fixerId).sort((a, b) => (AGE_ORDER[a.ageBand ?? "16+"] ?? 3) - (AGE_ORDER[b.ageBand ?? "16+"] ?? 3));
-  const pieces = [...m.cards].sort((a, b) => (a.part === "pictures" ? -1 : b.part === "pictures" ? 1 : 0));
-  const priv: Record<string, Record<string, unknown>> = {};
+  const next: MachinePublic = { ...s, round, nonce: nonce(ctx.rng), fixerId, parts: { lamps: "open", pictures: "open", dial: "open" }, wobbles: 0, cards: [], last: s.last };
+  const m = buildMachine(seedOf(ctx, next), s.settings.level);
+  // The rulebook goes round the Helpers in a fresh order each round. With one
+  // Helper they hold all of it; with more Helpers than cards, some cards are
+  // held twice.
+  const helpers = shuffle(
+    s.team.filter((id) => id !== fixerId),
+    ctx.rng
+  );
   const held: Record<string, RuleCard[]> = {};
-  for (const h of helpers) held[h.id] = [];
-  const count = Math.max(pieces.length, helpers.length);
-  for (let i = 0; i < count; i++) held[helpers[i % helpers.length].id].push(pieces[i % pieces.length]);
+  for (const h of helpers) held[h] = [];
+  const count = Math.max(m.cards.length, helpers.length);
+  for (let i = 0; i < count; i++) held[helpers[i % helpers.length]].push(m.cards[i % m.cards.length]);
+  const priv: Record<string, Record<string, unknown>> = {};
   for (const h of helpers) {
-    const mine: MachineMine = { round, role: "helper", cards: held[h.id] };
-    priv[h.id] = mine as unknown as Record<string, unknown>;
-    next.holders[h.id] = [...new Set(held[h.id].map((c) => c.part))];
+    const mine: MachineMine = { round, role: "helper", cards: held[h] };
+    priv[h] = mine as unknown as Record<string, unknown>;
   }
+  next.cards = m.cards.map((c) => ({ title: c.title, part: c.part, holders: helpers.filter((h) => held[h].includes(c)) }));
   const fixerMine: MachineMine = { round, role: "fixer", view: m.view };
   priv[fixerId] = fixerMine as unknown as Record<string, unknown>;
   const ends = new Date(Date.parse(ctx.now) + s.settings.clockSeconds * 1000).toISOString();
@@ -194,7 +221,7 @@ function sameList(a: unknown, b: unknown[]): boolean {
 export const machine: GameModule = {
   id: MACHINE,
   name: "Fix the Machine",
-  minPlayers: 3,
+  minPlayers: 2,
   maxPlayers: 12,
   phases: {
     fixing: { waitsFor: "one" },
@@ -202,12 +229,13 @@ export const machine: GameModule = {
   },
 
   setup(ctx, options) {
-    if (ctx.players.length < 3) return reject("too_few_players");
+    if (ctx.players.length < 2) return reject("too_few_players");
     if (!ctx.secret) return reject("server_error");
     const pace = pick<MachinePace>(options?.pace, ["relaxed", "normal", "quick"], "normal");
     const length = pick<MachineLength>(options?.length, ["short", "normal", "long"], "normal");
+    const level = ([1, 2, 3, 4, 5] as const).includes(options?.level as MachineLevel) ? (options!.level as MachineLevel) : 1;
     const base: MachinePublic = {
-      settings: { pace, length, clockSeconds: MACHINE_CLOCK[pace], rounds: MACHINE_ROUNDS[length] },
+      settings: { pace, length, level, clockSeconds: Math.round(MACHINE_CLOCK[pace] * LEVELS[level].clock), rounds: MACHINE_ROUNDS[length] },
       round: 0,
       team: ctx.players.map((p) => p.id),
       fixerStart: Math.floor(ctx.rng() * ctx.players.length),
@@ -215,7 +243,7 @@ export const machine: GameModule = {
       fixerId: "",
       parts: {},
       wobbles: 0,
-      holders: {},
+      cards: [],
       score: 0,
       last: null,
       finished: false,
@@ -237,10 +265,8 @@ export const machine: GameModule = {
         const part = payload.part as PartKey;
         if (!(part in s.parts)) return reject("unknown_part");
         if (s.parts[part] === "fixed") return noop();
-        const fixer = ctx.players.find((p) => p.id === s.fixerId);
-        const m = buildMachine(seedOf(ctx, s), tierFor(fixer?.ageBand));
-        const right =
-          part === "lamps" ? sameList(payload.answer, m.answers.lamps!) : part === "pictures" ? sameList(payload.answer, m.answers.pictures!) : payload.answer === m.answers.dial;
+        const m = buildMachine(seedOf(ctx, s), s.settings.level);
+        const right = part === "lamps" ? sameList(payload.answer, m.answers.lamps) : part === "pictures" ? sameList(payload.answer, m.answers.pictures) : sameList(payload.answer, m.answers.dial);
         if (right) {
           const next = { ...s, parts: { ...s.parts, [part]: "fixed" as const } };
           if (Object.values(next.parts).every((v) => v === "fixed")) return endRound(ctx, next, null);

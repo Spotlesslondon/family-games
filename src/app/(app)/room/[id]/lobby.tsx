@@ -21,7 +21,7 @@ import { MrWhitePlay, MrWhiteResults, type MrWhiteMine, type MrWhitePublic } fro
 import { QuizPlay, QuizResults } from "./quiz-play";
 import { NervePlay, NerveResults, type NerveOptions } from "./nerve-play";
 import { MachinePlay, MachineResults, type MachineOptions } from "./machine-play";
-import type { MachineMine, MachinePublic } from "@/games/machine/shape";
+import { LEVEL_NAMES, type MachineMine, type MachinePublic } from "@/games/machine/shape";
 import type { NervePublic } from "@/games/nerve/shape";
 import { QUIZ_TOPICS, type QuizLength, type QuizMine, type QuizPublic, type QuizTopic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
@@ -109,7 +109,7 @@ export function Lobby() {
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
   const [game, setGame] = useState<"mr-white" | "quiz" | "nerve" | "machine">("mr-white");
-  const [machineOpts, setMachineOpts] = useState<MachineOptions>({ pace: "normal", length: "normal" });
+  const [machineOpts, setMachineOpts] = useState<MachineOptions>({ pace: "normal", length: "normal", level: 1 });
   const [nerveOpts, setNerveOpts] = useState<NerveOptions>({ pace: "normal", length: "normal", level: "normal" });
   const [quizLength, setQuizLength] = useState<QuizLength>("normal");
   const [quizTopic, setQuizTopic] = useState<QuizTopic>("mixed");
@@ -631,6 +631,23 @@ export function Lobby() {
             ) : game === "machine" ? (
               <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Fix the Machine settings">
                 <p className="px-3 text-sm text-muted">One of you sees a jammed machine. Everyone else holds part of the rulebook. Talk it through and fix it before the clock runs out. Team score.</p>
+                <div className="flex flex-col gap-2 px-3">
+                  <span className="font-bold">Level</span>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="Level">
+                    {([1, 2, 3, 4, 5] as const).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        aria-pressed={machineOpts.level === n}
+                        onClick={() => setMachineOpts((o) => ({ ...o, level: n }))}
+                        className={`h-11 w-11 rounded-full border-2 border-ink font-display text-lg font-bold ${machineOpts.level === n ? "bg-go" : "bg-surface"}`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-sm text-muted">{LEVEL_NAMES[machineOpts.level]}</span>
+                </div>
                 {([
                   ["pace", "Clock", ["relaxed", "normal", "quick"], { relaxed: "Relaxed, 4 minutes", normal: "Normal, 3 minutes", quick: "Quick, 2 minutes" }],
                   ["length", "Rounds", ["short", "normal", "long"], { short: "1 round", normal: "3 rounds", long: "5 rounds" }],
@@ -711,7 +728,7 @@ export function Lobby() {
             )}
             <button
               type="button"
-              disabled={here < (game === "mr-white" || game === "machine" ? 3 : 2)}
+              disabled={here < (game === "mr-white" ? 3 : 2)}
               onClick={async () => {
                 const out =
                   game === "machine"
@@ -726,8 +743,8 @@ export function Lobby() {
               className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
               {game === "machine"
-                ? here < 3
-                  ? "Fix the Machine needs 3 players"
+                ? here < 2
+                  ? "Fix the Machine needs 2 players"
                   : "Fix the Machine"
                 : game === "nerve"
                 ? here < 2
