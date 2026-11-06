@@ -442,10 +442,9 @@ export function MachineResults({ state: s, me, hostId, act }: { state: MachinePu
     await act(type, payload);
     setBusy(false);
   };
-  const perfect = s.score >= s.settings.rounds * 3;
   return (
     <section className="flex flex-1 flex-col gap-4">
-      <h2 className="font-display text-4xl font-bold leading-tight text-ink">{s.score === 0 ? "The machine won this time" : perfect ? "Master mechanics!" : "Good work, team"}</h2>
+      <h2 className="font-display text-4xl font-bold leading-tight text-ink">{s.score === 0 ? "The machine won this time" : "Good work, team"}</h2>
       <div className="card flex items-center justify-between px-5 py-4">
         <span className="font-bold">Team score</span>
         <span className="font-display text-4xl font-bold">{s.score}</span>
