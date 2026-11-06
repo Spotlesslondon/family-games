@@ -14,7 +14,8 @@ export async function POST(request: Request) {
     if (typeof body.roomId !== "string") throw new AuthError("invalid_request", 400);
     const who = await caller(token);
     const db = serviceClient();
-    const { data: room } = await db.from("rooms").select("id, family_id, host_member_id, created_at, status").eq("id", body.roomId).maybeSingle();
+    const { data: room, error: roomError } = await db.from("rooms").select("id, family_id, host_member_id, opened_at, status").eq("id", body.roomId).maybeSingle();
+    if (roomError) throw new AuthError("server_busy", 503, { reason: roomError.message });
     if (!room || room.family_id !== who.family_id) throw new AuthError("room_not_found", 404);
     if (who.id !== room.host_member_id && who.role !== "owner") throw new AuthError("host_only", 403);
     const [{ data: events, error }, { data: members }] = await Promise.all([
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
     const name = new Map((members ?? []).map((m) => [m.id as string, m.display_name as string]));
     return Response.json({
       ok: true,
-      room: { id: room.id, status: room.status, created_at: room.created_at },
+      room: { id: room.id, status: room.status, opened_at: room.opened_at },
       events: (events ?? []).map((e) => ({ at: e.created_at, who: e.member_id ? (name.get(e.member_id as string) ?? "someone") : null, type: e.event_type, ...(e.payload as Record<string, unknown>) })),
     });
   } catch (err) {

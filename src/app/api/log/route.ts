@@ -21,7 +21,8 @@ export async function POST(request: Request) {
     const who = await caller(token);
     const db = serviceClient();
     // Only a member of the room's family, or a seat or screen in that room, may write to its log.
-    const { data: room } = await db.from("rooms").select("id, family_id").eq("id", roomId).maybeSingle();
+    const { data: room, error: roomError } = await db.from("rooms").select("id, family_id").eq("id", roomId).maybeSingle();
+    if (roomError) throw new AuthError("server_busy", 503, { reason: roomError.message });
     if (!room || room.family_id !== who.family_id) throw new AuthError("room_not_found", 404);
     if (who.kind !== "member" && who.roomId !== roomId) throw new AuthError("room_not_found", 404);
     const { error } = await db.from("game_events").insert({
