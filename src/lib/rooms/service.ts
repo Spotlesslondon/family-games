@@ -160,7 +160,7 @@ export async function actAs(
           member_id: caller.id,
           event_type: "action",
           payload: {
-            type,
+            action: type,
             ...loggedPayload(type, payload),
             from: `${loaded.room.currentGame ?? "lobby"}/${loaded.room.phase}`,
             to: `${next.currentGame ?? "lobby"}/${next.phase}`,
