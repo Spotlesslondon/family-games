@@ -38,6 +38,12 @@ export function MachinePlay({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [shake, setShake] = useState(0);
+  const [lastWobbles, setLastWobbles] = useState(s.wobbles);
+  if (s.wobbles !== lastWobbles) {
+    setLastWobbles(s.wobbles);
+    if (s.wobbles > lastWobbles) setShake((n) => n + 1);
+  }
   const isHost = me === hostId;
   const name = (id: string) => (id === me ? "You" : people.get(id)?.name || "Someone");
   const total = Object.keys(s.parts ?? {}).length;
@@ -92,7 +98,7 @@ export function MachinePlay({
 
   if (mine?.role === "fixer" && mine.round === s.round) {
     return (
-      <section className="flex flex-1 flex-col gap-4">
+      <section key={shake} className={`flex flex-1 flex-col gap-4 ${shake ? "machine-shake" : ""}`}>
         {header}
         {clock}
         <h2 className="font-display text-3xl font-bold leading-tight">You are the Fixer</h2>
@@ -187,6 +193,11 @@ function Clock({ endsAt, fire }: { endsAt: string | null; fire: () => unknown })
 }
 
 // ---- the parts ------------------------------------------------------------
+// Joshua, 6 Nov 19:20: a part must look, feel and move like the part it is.
+// Lamps are lamps with glass that glow; pictures are keys that press in; the
+// dial is a knob that turns to the number. The panel shakes on a wobble.
+
+const PANEL = "rounded-3xl border-4 border-ink bg-[#3b3f46] p-4 text-white shadow-[6px_6px_0_#111]";
 
 function Lamps({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean; busy: boolean; onTry: (a: number[]) => Promise<boolean> }) {
   const [pressed, setPressed] = useState<number[]>([]);
@@ -202,26 +213,47 @@ function Lamps({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean
   }
   return (
     <Part title={PART_NAMES.lamps} fixed={fixed} hint={fixed ? "" : "Press the lamps in the right order. Say which are lit and what colour they are."}>
-      <div className="flex justify-around py-2">
-        {lamps.map((l, i) => (
-          <button
-            key={i}
-            type="button"
-            disabled={fixed || busy}
-            onClick={() => press(i)}
-            aria-label={`${l.colour} lamp, ${l.lit ? "lit" : "off"}${pressed.includes(i) ? ", pressed" : ""}`}
-            className="flex flex-col items-center gap-1"
-          >
-            <span
-              className={`flex h-14 w-14 items-center justify-center rounded-full border-4 border-ink font-display text-xl font-bold ${l.lit ? "shadow-[0_0_0_6px_rgba(244,197,66,0.6)]" : "opacity-50"}`}
-              style={{ background: LAMP_FILL[l.colour], color: l.colour === "white" || l.colour === "yellow" ? "#1d1a14" : "#fff" }}
+      <div className={`${PANEL} flex justify-around`}>
+        {lamps.map((l, i) => {
+          const n = pressed.indexOf(i);
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={fixed || busy}
+              onClick={() => press(i)}
+              aria-label={`${l.colour} lamp, ${l.lit ? "lit" : "off"}${n >= 0 ? ", pressed " + (n + 1) : ""}`}
+              className="machine-key flex flex-col items-center gap-1"
+              data-down={n >= 0}
             >
-              {pressed.includes(i) ? pressed.indexOf(i) + 1 : ""}
-            </span>
-            <span className="text-xs font-bold">{l.colour}</span>
-            <span className="text-xs text-muted">{l.lit ? "lit" : "off"}</span>
-          </button>
-        ))}
+              <svg viewBox="0 0 64 80" className="h-20 w-16" aria-hidden>
+                <defs>
+                  <radialGradient id={`glow-${i}`} cx="50%" cy="40%" r="60%">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.9" />
+                    <stop offset="40%" stopColor={LAMP_FILL[l.colour]} stopOpacity="1" />
+                    <stop offset="100%" stopColor={LAMP_FILL[l.colour]} stopOpacity="0.9" />
+                  </radialGradient>
+                </defs>
+                {l.lit && <circle cx="32" cy="30" r="30" fill={LAMP_FILL[l.colour]} opacity="0.35" className="machine-lamp-lit" />}
+                <rect x="14" y="52" width="36" height="14" rx="4" fill="#9a9ea6" stroke="#111" strokeWidth="2.5" />
+                <rect x="20" y="64" width="24" height="10" rx="3" fill="#6b6f77" stroke="#111" strokeWidth="2.5" />
+                <circle cx="32" cy="30" r="24" fill={l.lit ? `url(#glow-${i})` : "#2a2d33"} stroke="#111" strokeWidth="3" />
+                {!l.lit && <circle cx="32" cy="30" r="18" fill={LAMP_FILL[l.colour]} opacity="0.25" />}
+                <ellipse cx="24" cy="20" rx="7" ry="4" fill="#fff" opacity={l.lit ? 0.7 : 0.15} />
+                {n >= 0 && (
+                  <>
+                    <circle cx="32" cy="30" r="12" fill="#111" />
+                    <text x="32" y="36" textAnchor="middle" fontSize="16" fontWeight="800" fill="#fff" fontFamily="inherit">
+                      {n + 1}
+                    </text>
+                  </>
+                )}
+              </svg>
+              <span className="text-xs font-bold">{l.colour}</span>
+              <span className={`text-xs ${l.lit ? "text-go" : "text-white/60"}`}>{l.lit ? "lit" : "off"}</span>
+            </button>
+          );
+        })}
       </div>
       {!fixed && pressed.length > 0 && (
         <button type="button" onClick={() => setPressed([])} className="self-start text-sm font-bold text-pick underline">
@@ -245,17 +277,20 @@ function PictureRow({ view, fixed, busy, onTry }: { view: MachineView; fixed: bo
     }
   }
   return (
-    <Part title={PART_NAMES.pictures} fixed={fixed} hint={fixed ? "" : "Tap the pictures in the right order. Say what pictures you have."}>
-      <div className="flex justify-around py-2">
-        {pics.map((p) => (
-          <button key={p} type="button" disabled={fixed || busy} onClick={() => tap(p)} aria-label={`${p}${tapped.includes(p) ? ", tapped" : ""}`} className="flex flex-col items-center gap-1">
-            <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl border-4 border-ink bg-surface">
-              <Icon p={p} />
-              {tapped.includes(p) && <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-ink bg-go text-xs font-extrabold">{tapped.indexOf(p) + 1}</span>}
-            </span>
-            <span className="text-xs font-bold">{p}</span>
-          </button>
-        ))}
+    <Part title={PART_NAMES.pictures} fixed={fixed} hint={fixed ? "" : "Press the picture keys in the right order. Say what pictures you have."}>
+      <div className={`${PANEL} flex justify-around`}>
+        {pics.map((p) => {
+          const n = tapped.indexOf(p);
+          return (
+            <button key={p} type="button" disabled={fixed || busy} onClick={() => tap(p)} aria-label={`${p}${n >= 0 ? ", pressed " + (n + 1) : ""}`} className="flex flex-col items-center gap-2">
+              <span className="machine-key relative flex h-16 w-16 items-center justify-center rounded-xl border-[3px] border-ink bg-[#f7f3e8] shadow-[0_5px_0_#111]" data-down={n >= 0}>
+                <Icon p={p} />
+                {n >= 0 && <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-ink bg-go text-xs font-extrabold text-ink">{n + 1}</span>}
+              </span>
+              <span className="text-xs font-bold">{p}</span>
+            </button>
+          );
+        })}
       </div>
       {!fixed && tapped.length > 0 && (
         <button type="button" onClick={() => setTapped([])} className="self-start text-sm font-bold text-pick underline">
@@ -266,28 +301,65 @@ function PictureRow({ view, fixed, busy, onTry }: { view: MachineView; fixed: bo
   );
 }
 
+/** A knob with six positions. Tap a number, or the knob itself to click on one, and it turns there. */
 function Dial({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean; busy: boolean; onTry: (a: number) => Promise<boolean> }) {
   const [setting, setSetting] = useState<number | null>(null);
   const pattern = view.dial?.pattern ?? "dots";
+  const shown = setting ?? 1;
+  // Position 1 is at the top; each click is 60 degrees clockwise.
+  const angle = (shown - 1) * 60;
+  const turnTo = (n: number) => {
+    if (fixed || busy) return;
+    setSetting(n);
+  };
   return (
-    <Part title={PART_NAMES.dial} fixed={fixed} hint={fixed ? "" : `The dial shows ${pattern}. Set it to the right number.`}>
-      <div className="flex items-center gap-4 py-2">
-        <span className="flex h-16 w-16 items-center justify-center rounded-2xl border-4 border-ink bg-surface" aria-label={`pattern: ${pattern}`}>
-          <PatternIcon p={pattern} />
-        </span>
-        <div className="flex flex-wrap gap-2">
-          {[1, 2, 3, 4, 5, 6].map((n) => (
-            <button
-              key={n}
-              type="button"
-              disabled={fixed || busy}
-              aria-pressed={setting === n}
-              onClick={() => setSetting(n)}
-              className={`h-12 w-12 rounded-full border-2 border-ink font-display text-xl font-bold ${setting === n ? "bg-go" : "bg-surface"}`}
-            >
-              {n}
-            </button>
-          ))}
+    <Part title={PART_NAMES.dial} fixed={fixed} hint={fixed ? "" : `The dial shows ${pattern}. Turn it to the right number, then set it.`}>
+      <div className={`${PANEL} flex items-center justify-center gap-5`}>
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] font-bold tracking-widest text-white/70">PATTERN</span>
+          <span className="flex h-16 w-16 items-center justify-center rounded-xl border-[3px] border-ink bg-[#f7f3e8]" aria-label={`pattern: ${pattern}`}>
+            <PatternIcon p={pattern} />
+          </span>
+          <span className="text-xs font-bold">{pattern}</span>
+        </div>
+        <div className="relative h-44 w-44" role="group" aria-label={`Dial, pointing at ${shown}`}>
+          <svg viewBox="0 0 200 200" className="h-44 w-44" aria-hidden>
+            <circle cx="100" cy="100" r="96" fill="#2a2d33" stroke="#111" strokeWidth="3" />
+            {[1, 2, 3, 4, 5, 6].map((n) => {
+              const a = ((n - 1) * 60 - 90) * (Math.PI / 180);
+              return <line key={n} x1={100 + Math.cos(a) * 78} y1={100 + Math.sin(a) * 78} x2={100 + Math.cos(a) * 88} y2={100 + Math.sin(a) * 88} stroke="#f7f3e8" strokeWidth="4" strokeLinecap="round" />;
+            })}
+            <g className="machine-knob" style={{ transform: `rotate(${angle}deg)` }}>
+              <circle cx="100" cy="100" r="60" fill="#c9ccd2" stroke="#111" strokeWidth="3" />
+              <circle cx="100" cy="100" r="48" fill="#e8eaee" stroke="#111" strokeWidth="2" />
+              {Array.from({ length: 24 }, (_, i) => {
+                const a = (i * 15 * Math.PI) / 180;
+                return <line key={i} x1={100 + Math.cos(a) * 50} y1={100 + Math.sin(a) * 50} x2={100 + Math.cos(a) * 58} y2={100 + Math.sin(a) * 58} stroke="#111" strokeWidth="2" />;
+              })}
+              <polygon points="100,38 92,58 108,58" fill="#b3261e" stroke="#111" strokeWidth="2" />
+              <circle cx="100" cy="100" r="8" fill="#111" />
+            </g>
+          </svg>
+          {[1, 2, 3, 4, 5, 6].map((n) => {
+            const a = ((n - 1) * 60 - 90) * (Math.PI / 180);
+            const x = 50 + Math.cos(a) * 44;
+            const y = 50 + Math.sin(a) * 44;
+            return (
+              <button
+                key={n}
+                type="button"
+                disabled={fixed || busy}
+                aria-pressed={setting === n}
+                onClick={() => turnTo(n)}
+                style={{ left: `${x}%`, top: `${y}%` }}
+                className={`absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-ink font-display text-base font-bold ${
+                  setting === n ? "bg-go text-ink" : "bg-[#f7f3e8] text-ink"
+                }`}
+              >
+                {n}
+              </button>
+            );
+          })}
         </div>
       </div>
       {!fixed && (
@@ -301,7 +373,7 @@ function Dial({ view, fixed, busy, onTry }: { view: MachineView; fixed: boolean;
           }}
           className={`${secondary} h-12 w-auto self-start px-5 text-base disabled:opacity-60`}
         >
-          Set the dial
+          {setting === null ? "Turn the dial first" : `Set the dial to ${setting}`}
         </button>
       )}
     </Part>
@@ -313,7 +385,15 @@ function Part({ title, fixed, hint, children }: { title: string; fixed: boolean;
     <div className={`card flex flex-col gap-2 px-4 py-3 ${fixed ? "opacity-70" : ""}`}>
       <div className="flex items-center justify-between">
         <span className="font-display text-xl font-bold">{title}</span>
-        {fixed && <span className="rounded-full bg-go px-3 py-1 text-sm font-extrabold">Fixed</span>}
+        {fixed ? (
+          <span className="flex items-center gap-2 rounded-full bg-go px-3 py-1 text-sm font-extrabold">
+            <span className="h-3 w-3 rounded-full border-2 border-ink bg-[#3da35d]" /> Fixed
+          </span>
+        ) : (
+          <span className="flex items-center gap-2 text-sm font-bold text-muted">
+            <span className="h-3 w-3 rounded-full border-2 border-ink bg-alert" /> Jammed
+          </span>
+        )}
       </div>
       {hint && <p className="text-sm text-muted">{hint}</p>}
       {children}
