@@ -125,7 +125,10 @@ export function Forecast({ roomId, me, people, isHost }: { roomId: string; me: s
   for (const p of players) scores[p] = 0;
   for (const c of cards) for (const [id, n] of Object.entries(c.points ?? {})) scores[id] = (scores[id] ?? 0) + n;
   const label = (card: Card, v: string) => (card.kind === "yesno" ? (v === "yes" ? "Yes" : "No") : name(v));
-  const choices = (card: Card) => (card.kind === "yesno" ? ["yes", "no"] : players);
+  // On a person card you call someone else, never yourself.
+  const choices = (card: Card) => (card.kind === "yesno" ? ["yes", "no"] : players.filter((p) => p !== me));
+  // The ruler can rule that it was anyone, themselves included.
+  const outcomes = (card: Card) => (card.kind === "yesno" ? ["yes", "no"] : players);
 
   return (
     <>
@@ -187,7 +190,7 @@ export function Forecast({ roomId, me, people, isHost }: { roomId: string; me: s
                           <div className="flex flex-col gap-2 rounded-2xl bg-surface-2 p-3">
                             <span className="text-sm font-bold">{card.status === "claimed" ? "Rule on it:" : "Rule now, if you know:"}</span>
                             <div className="flex flex-wrap gap-2">
-                              {choices(card).map((v) => (
+                              {outcomes(card).map((v) => (
                                 <button key={v} type="button" disabled={busy} onClick={() => send({ action: "rule", cardId: card.id, outcome: v })} className={`${btn} h-10`}>
                                   {label(card, v)}
                                 </button>

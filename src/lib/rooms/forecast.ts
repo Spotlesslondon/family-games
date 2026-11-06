@@ -107,6 +107,9 @@ export async function makeCall(accessToken: string, roomId: unknown, cardId: unk
   }
   const valid = card.kind === "yesno" ? call === "yes" || call === "no" : typeof call === "string" && ps.includes(call);
   if (!valid) throw new AuthError("bad_call", 400);
+  // Not yourself (Joshua, 6 Nov): a secret call on yourself plus doing the
+  // thing on purpose is a free point, and a lone one is worth three.
+  if (card.kind === "person" && call === s.memberId) throw new AuthError("self_call", 400);
   fail(
     (
       await db
