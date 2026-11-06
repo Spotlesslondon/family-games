@@ -14,6 +14,18 @@ interface Seat {
   inRoom: string[];
 }
 
+/** One line in the night's ledger for a Forecast action. Never the call itself: a locked call stays secret. */
+async function logForecast(s: Seat, action: string, extra: Record<string, unknown> = {}): Promise<void> {
+  const { error } = await serviceClient().from("game_events").insert({
+    family_id: s.familyId,
+    room_id: s.roomId,
+    member_id: s.memberId,
+    event_type: "action",
+    payload: { action: `forecast_${action}`, ...extra },
+  });
+  if (error) console.error("forecast log", error.message);
+}
+
 async function seat(accessToken: string, roomId: unknown): Promise<Seat> {
   if (typeof roomId !== "string") throw new AuthError("invalid_request", 400);
   const who = await caller(accessToken);
@@ -76,6 +88,7 @@ export async function startForecast(accessToken: string, roomId: unknown, body: 
       )
     ).error,
   );
+  await logForecast(s, "start", { forecastId, pack, cards: keys.length, presenter: typeof body.presenterId === "string" ? "named" : "host" });
   return { ok: true, forecastId };
 }
 
@@ -117,6 +130,7 @@ export async function makeCall(accessToken: string, roomId: unknown, cardId: unk
         .upsert({ card_id: card.id, member_id: s.memberId, forecast_id: f.id, family_id: s.familyId, call: call as string, created_at: new Date().toISOString() })
     ).error,
   );
+  await logForecast(s, "call", { cardId: card.id });
   return { ok: true };
 }
 
