@@ -77,6 +77,8 @@ export const LIMITS = {
   // code among a million at this rate would take years from one address.
   joinLookup: [60, 600],
   joinClaim: [30, 600],
+  // A phone reporting trouble: plenty for a bad night, not enough to flood.
+  phoneLog: [60, 600],
 } as const satisfies Record<string, readonly [number, number]>;
 
 /** Counts one request against a limit; throws 429 once it is used up. */

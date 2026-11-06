@@ -14,6 +14,7 @@ import {
   message,
   postAsMember,
   wasSeatIn,
+  reportTrouble,
   type ClientSession,
 } from "@/lib/client/session";
 import { Reconnect } from "@/app/(app)/reconnect";
@@ -118,13 +119,17 @@ export function Lobby() {
   // longer than the one-hour token keeps working.
   const act = useCallback(
     async (type: string, payload?: Record<string, unknown>) => {
-      const res = await postAsMember("/api/room-action", { roomId: id, type, payload }).catch(() => null);
+      const res = await postAsMember("/api/room-action", { roomId: id, type, payload }).catch((e: unknown) => {
+        reportTrouble(id, "tap_failed", `${type}: ${e instanceof Error ? e.name + " " + e.message : "no response"}`);
+        return null;
+      });
       if (!res) {
         setActionError(message("offline"));
         return null;
       }
       setActionError(null);
       const out = await res.json().catch(() => ({}));
+      if (res.status >= 500) reportTrouble(id, "tap_failed", `${type}: server ${res.status}`);
       // Read the new state straight away rather than waiting for Realtime to
       // say it changed: the tapping phone moves on at once (2 Nov, "Vote now
       // button has a big delay"). Realtime still updates everyone else.
@@ -240,8 +245,13 @@ export function Lobby() {
       // connection was down are not replayed.
       .subscribe((status) => {
         if (status === "SUBSCRIBED" && alive) reload();
+        if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && alive) reportTrouble(id, "realtime", status);
       });
 
+    const onError = (ev: ErrorEvent) => reportTrouble(id, "error", `${ev.message} @ ${(ev.filename ?? "").split("/").pop()}:${ev.lineno}`);
+    const onRejection = (ev: PromiseRejectionEvent) => reportTrouble(id, "error", `unhandled: ${ev.reason instanceof Error ? ev.reason.name + " " + ev.reason.message : String(ev.reason).slice(0, 120)}`);
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
         // Must be sent without waiting: the page may be frozen straight after.
@@ -266,6 +276,8 @@ export function Lobby() {
       alive = false;
       clearInterval(heartbeat);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
       db.removeChannel(channel);
     };
   }, [session, id, act, reload]);

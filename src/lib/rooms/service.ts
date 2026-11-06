@@ -96,6 +96,23 @@ export async function act(accessToken: string, roomId: string, type: string, pay
   return actAs(who, roomId, type, payload);
 }
 
+/**
+ * What goes in the ledger for an action (Joshua, 6 Nov: "do you have logging
+ * to see what happens in a session?"). Every committed action is logged with
+ * who, what, when, the phase it left and the phase it reached, and how long
+ * the server took. Secrets are left out: a locked Forecast call, a Nerve bank
+ * before the reveal, a Mr White vote, and any free text a player typed (clue
+ * text is already in the room's state, chat is stored once in its own table).
+ */
+const REDACT: Record<string, string[]> = { call: ["call"], bank: ["claim"], vote: ["*"], clue: ["text"], say: ["*"] };
+function loggedPayload(type: string, payload: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!payload) return {};
+  const drop = REDACT[type];
+  if (!drop) return payload;
+  if (drop.includes("*")) return {};
+  return Object.fromEntries(Object.entries(payload).filter(([k]) => !drop.includes(k)));
+}
+
 /** Applies one action for a caller already identified. Retries a lost race up to three times. */
 export async function actAs(
   caller: Pick<Caller, "id" | "family_id">,
@@ -103,6 +120,7 @@ export async function actAs(
   type: string,
   payload?: Record<string, unknown>
 ): Promise<ActResult> {
+  const started = Date.now();
   const db = serviceClient();
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -132,11 +150,24 @@ export async function actAs(
       p_status: next.status,
       p_members: next.members.map((m) => ({ member_id: m.id, connected: m.connected })),
       p_private: Object.entries(result.write.private ?? {}).map(([memberId, state]) => ({ member_id: memberId, state })),
-      p_events: (result.write.events ?? []).map((e) => ({
-        member_id: e.memberId ?? null,
-        event_type: e.type,
-        payload: e.payload ?? {},
-      })),
+      p_events: [
+        ...(result.write.events ?? []).map((e) => ({
+          member_id: e.memberId ?? null,
+          event_type: e.type,
+          payload: e.payload ?? {},
+        })),
+        {
+          member_id: caller.id,
+          event_type: "action",
+          payload: {
+            type,
+            ...loggedPayload(type, payload),
+            from: `${loaded.room.currentGame ?? "lobby"}/${loaded.room.phase}`,
+            to: `${next.currentGame ?? "lobby"}/${next.phase}`,
+            ms: Date.now() - started,
+          },
+        },
+      ],
     });
     if (!error) return { ok: true, version: data as number };
     if (!error.message.includes("version_conflict")) {

@@ -96,6 +96,19 @@ export function memberClient(): SupabaseClient {
  * POST to our own API as the signed-in member, with a current token. If the
  * server says the token is no good, renew once and retry.
  */
+/**
+ * A phone reports trouble to the night's log (an error, a lost realtime feed,
+ * a tap that failed) so it can be read back afterwards. Never throws, never
+ * waits, and sends at most one report every three seconds.
+ */
+let lastReport = 0;
+export function reportTrouble(roomId: string, kind: "error" | "realtime" | "tap_failed" | "offline" | "note", detail: string): void {
+  const now = Date.now();
+  if (now - lastReport < 3000) return;
+  lastReport = now;
+  postAsMember("/api/log", { roomId, kind, detail: detail.slice(0, 300) }, { keepalive: true }).catch(() => {});
+}
+
 export async function postAsMember(path: string, body: unknown, init?: { keepalive?: boolean }): Promise<Response> {
   const send = async (token: string | null) => {
     // A tap that hangs on a bad connection gives up after 12 seconds, so its
