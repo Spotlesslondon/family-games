@@ -143,6 +143,7 @@ export async function claimCard(accessToken: string, roomId: unknown, cardId: un
     (await serviceClient().from("forecast_cards").update({ status: "claimed", claimed_by: s.memberId, claimed_at: new Date().toISOString() }).eq("id", card.id).eq("status", "open"))
       .error,
   );
+  await logForecast(s, "claim", { cardId: card.id });
   return { ok: true };
 }
 
@@ -155,6 +156,7 @@ export async function ruleCard(accessToken: string, roomId: unknown, cardId: unk
   const db = serviceClient();
   if (outcome === "notyet") {
     fail((await db.from("forecast_cards").update({ status: "open", claimed_by: null, claimed_at: null }).eq("id", card.id)).error);
+    await logForecast(s, "rule", { cardId: card.id, outcome: "notyet" });
     return { ok: true };
   }
   const ps = await players(f.id);
@@ -172,6 +174,8 @@ export async function ruleCard(accessToken: string, roomId: unknown, cardId: unk
         .neq("status", "settled")
     ).error,
   );
+  // The outcome is public once settled, so it may be logged; the calls that scored stay as counts.
+  await logForecast(s, "rule", { cardId: card.id, outcome, scored: Object.keys(points).length, callers: Object.keys(map).length });
   return { ok: true };
 }
 
@@ -182,6 +186,7 @@ export async function endForecast(accessToken: string, roomId: unknown) {
   const f = await openForecast(s.roomId);
   if (!f) return { ok: true };
   fail((await serviceClient().from("forecasts").update({ status: "finished", finished_at: new Date().toISOString() }).eq("id", f.id)).error);
+  await logForecast(s, "end", { forecastId: f.id });
   return { ok: true };
 }
 
