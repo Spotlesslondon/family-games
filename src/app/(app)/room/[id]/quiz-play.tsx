@@ -100,7 +100,7 @@ export function QuizPlay({
     return (
       <section className="flex flex-1 flex-col gap-4">
         {counter}
-        <h2 className="font-display text-3xl font-semibold leading-tight text-ink">{mine.text}</h2>
+        <h2 className="text-2xl font-bold leading-snug text-ink">{mine.text}</h2>
         <div className="flex flex-col gap-3" role="group" aria-label="Answers">
           {mine.options.map((option, i) => {
             const isMine = chosen === i;
@@ -115,7 +115,7 @@ export function QuizPlay({
                   const ok = await send("answer", { round: state.round, choice: i });
                   if (!ok) setTapped(null);
                 }}
-                className={`card relative min-h-16 px-5 py-3 text-left font-display text-2xl font-semibold ${
+                className={`card relative min-h-16 px-5 py-3 text-left text-xl font-bold ${
                   isMine ? "border-pick bg-surface ring-4 ring-pick" : chosen != null ? "opacity-50" : ""
                 }`}
               >
@@ -159,7 +159,7 @@ export function QuizPlay({
           <div className="card flex flex-col gap-2 px-5 py-4">
             <span className="text-lg">{myQ.text}</span>
             <span className="text-xs font-bold tracking-widest text-muted">THE ANSWER</span>
-            <span className="font-display text-3xl font-bold text-ink">{myQ.correct}</span>
+            <span className="text-2xl font-bold text-ink">{myQ.correct}</span>
             {!right && myPick && <span className="text-muted">You chose {myPick}</span>}
           </div>
         </>
