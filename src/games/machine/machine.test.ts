@@ -4,7 +4,7 @@ import { LOBBY, RESULTS, applyRoomAction } from "@/engine/room";
 import { seededRng } from "@/engine/rng";
 import type { GameContext, Player, PrivateMap, RoomSnapshot } from "@/engine/types";
 import { MACHINE, buildMachine, type Machine } from "./index";
-import { LEVELS, MAX_WOBBLES, PICTURES, type MachineLevel, type MachinePublic } from "./shape";
+import { LAMP_COLOURS, LEVELS, MAX_WOBBLES, PATTERNS, PICTURES, type MachineLevel, type MachinePublic, type MachineView, type Pattern, type Picture } from "./shape";
 import "../index";
 
 const everyone: Player[] = [
@@ -13,6 +13,81 @@ const everyone: Player[] = [
   { id: "teen", name: "Teen", ageBand: "12-15", role: "member" },
   { id: "nan", name: "Nan", ageBand: "16+", role: "adult" },
 ];
+
+/**
+ * Read a manual back the way the table would: parse each rule's words, check
+ * its conditions against what the Fixer sees, take the first that fits, and
+ * carry out its instruction. Written from the words alone, so it proves the
+ * text says what the generator meant.
+ */
+function condFits(text: string, v: MachineView): boolean {
+  const lamps = v.lamps!;
+  const lit = lamps.filter((l) => l.lit).length;
+  let m: RegExpMatchArray | null;
+  if ((m = text.match(/^the (leftmost|rightmost) lamp is (LIT|OFF)$/))) return (m[1] === "leftmost" ? lamps[0] : lamps[lamps.length - 1]).lit === (m[2] === "LIT");
+  if ((m = text.match(/^the (\w+) lamp is (LIT|OFF)$/))) {
+    const l = lamps.find((x) => x.colour === m![1]);
+    return !!l && l.lit === (m[2] === "LIT");
+  }
+  if ((m = text.match(/^there is a (\w+) lamp$/))) return lamps.some((x) => x.colour === m![1]);
+  if ((m = text.match(/^no lamp is (\w+)$/))) return !lamps.some((x) => x.colour === m![1]);
+  if ((m = text.match(/^exactly (\d+) lamps? (?:is|are) lit$/))) return lit === Number(m[1]);
+  if ((m = text.match(/^(\d+) or more lamps are lit$/))) return lit >= Number(m[1]);
+  if ((m = text.match(/^the (leftmost|rightmost) lamp is (LIT|OFF)$/))) return (m[1] === "leftmost" ? lamps[0] : lamps[lamps.length - 1]).lit === (m[2] === "LIT");
+  if ((m = text.match(/^the serial number is (even|odd)$/))) return v.serial % 2 === (m[1] === "even" ? 0 : 1);
+  if ((m = text.match(/^the serial number ends in (\d)$/))) return v.serial % 10 === Number(m[1]);
+  if ((m = text.match(/^the dial shows (\w+)$/))) return v.dial!.patterns.includes(m[1] as Pattern);
+  if ((m = text.match(/^there is a (\w+) key$/))) return v.pictures!.includes(m[1] as Picture);
+  if ((m = text.match(/^there is no (\w+) key$/))) return !v.pictures!.includes(m[1] as Picture);
+  throw new Error("unreadable condition: " + text);
+}
+
+function readManual(lines: string[]): { conds: string[]; instr: string }[] {
+  const rules: { conds: string[]; instr: string }[] = [];
+  for (const line of lines) {
+    const m = line.match(/^\d+\. (?:If (.+?)|Otherwise): (.+)\.$/);
+    if (!m) continue;
+    rules.push({ conds: m[1] ? m[1].split(" and ") : [], instr: m[2] });
+  }
+  return rules;
+}
+
+function firstFitting(lines: string[], v: MachineView): string {
+  const rules = readManual(lines);
+  expect(rules.length).toBeGreaterThan(0);
+  expect(rules[rules.length - 1].conds).toEqual([]);
+  for (const r of rules) if (r.conds.every((c) => condFits(c, v))) return r.instr;
+  throw new Error("no rule fits");
+}
+
+function doLamps(instr: string, v: MachineView): number[] {
+  const lamps = v.lamps!;
+  const all = lamps.map((_, i) => i);
+  const litIdx = all.filter((i) => lamps[i].lit);
+  const offIdx = all.filter((i) => !lamps[i].lit);
+  let m: RegExpMatchArray | null;
+  if (instr === "press the LIT lamps left to right, then the OFF lamps left to right") return [...litIdx, ...offIdx];
+  if (instr === "press the OFF lamps right to left, then the LIT lamps left to right") return [...offIdx.reverse(), ...litIdx];
+  if (instr === "press every lamp, left to right") return all;
+  if (instr === "press every lamp, right to left") return all.reverse();
+  if (instr === "press the LIT lamps right to left, then the OFF lamps right to left") return [...litIdx.reverse(), ...offIdx.reverse()];
+  if ((m = instr.match(/^press the (\w+) lamp first, then the rest left to right$/))) {
+    const first = lamps.findIndex((l) => l.colour === m![1]);
+    expect(first).toBeGreaterThanOrEqual(0);
+    return [first, ...all.filter((i) => i !== first)];
+  }
+  if ((m = instr.match(/^press in this colour order, skipping any colour the machine does not have: (.+)$/))) {
+    return m[1].split(", ").map((c) => lamps.findIndex((l) => l.colour === c)).filter((i) => i >= 0);
+  }
+  throw new Error("unreadable lamp instruction: " + instr);
+}
+
+function doPictures(instr: string, v: MachineView): Picture[] {
+  const m = instr.match(/^press the keys in this order(, BACKWARDS)?, skipping any key the machine does not have: (.+)$/);
+  if (!m) throw new Error("unreadable picture instruction: " + instr);
+  const seq = (m[2].split(", ") as Picture[]).filter((p) => v.pictures!.includes(p));
+  return m[1] ? seq.reverse() : seq;
+}
 
 /**
  * Solve a machine the way the table would: read the cards, look at the
@@ -110,10 +185,22 @@ describe("Fix the Machine", () => {
         expect(m.view.lamps!.length).toBe(spec.lamps);
         expect([...m.answers.lamps].sort()).toEqual(m.view.lamps!.map((_, i) => i));
         expect(m.view.lamps!.some((l) => l.lit) && m.view.lamps!.some((l) => !l.lit)).toBe(true);
-        const cardOrder = m.cards.find((c) => c.part === "pictures")!.lines[1].replace(".", "").split(", ");
-        expect(cardOrder.length).toBe(PICTURES.length);
+        // lamps: read the manual (both halves at level 5) and do what the first fitting rule says
+        const lampLines = m.cards.filter((c) => c.part === "lamps").flatMap((c) => c.lines);
+        expect(m.cards.filter((c) => c.part === "lamps").length).toBe(spec.splitLamps ? 2 : 1);
+        expect(readManual(lampLines).length).toBe(spec.lampRules);
+        expect(doLamps(firstFitting(lampLines, m.view), m.view)).toEqual(m.answers.lamps);
+        // pictures: a plain order, or a manual
         expect(m.view.pictures!.length).toBe(spec.pictures);
-        expect(m.answers.pictures).toEqual(cardOrder.filter((p) => m.view.pictures!.includes(p as never)));
+        const picCard = m.cards.find((c) => c.part === "pictures")!;
+        if (spec.pictureRules <= 1) {
+          const cardOrder = picCard.lines[1].replace(".", "").split(", ");
+          expect(cardOrder.length).toBe(PICTURES.length);
+          expect(m.answers.pictures).toEqual(cardOrder.filter((p) => m.view.pictures!.includes(p as never)));
+        } else {
+          expect(readManual(picCard.lines).length).toBe(spec.pictureRules);
+          expect(doPictures(firstFitting(picCard.lines, m.view), m.view)).toEqual(m.answers.pictures);
+        }
         expect(m.view.dial!.patterns.length).toBe(spec.dialTurns);
         expect(m.view.dial!.labels).toBe(spec.dialLabels);
         expect(solveDialFromCards(m)).toEqual(m.answers.dial);
@@ -122,6 +209,29 @@ describe("Fix the Machine", () => {
         if (spec.manuals === 2) expect(m.cards.filter((c) => c.part === "dial").length).toBe(5);
       }
     }
+  });
+
+  it("the fitting rule is not always the first, and from level 3 rules look across the machine", () => {
+    const where: Record<number, number[]> = {};
+    let cross = 0;
+    for (const level of [1, 2, 3, 4, 5] as MachineLevel[]) {
+      where[level] = [];
+      for (let seed = 1; seed <= 200; seed++) {
+        const m = buildMachine(seed, level);
+        const lines = m.cards.filter((c) => c.part === "lamps").flatMap((c) => c.lines);
+        const rules = readManual(lines);
+        const at = rules.findIndex((r) => r.conds.every((c) => condFits(c, m.view)));
+        where[level].push(at);
+        if (level >= 3 && rules.some((r) => r.conds.some((c) => /serial|dial shows|key$/.test(c)))) cross++;
+      }
+    }
+    for (const level of [2, 3, 4, 5] as MachineLevel[]) {
+      expect(new Set(where[level]).size).toBeGreaterThan(1);
+      expect(where[level].filter((i) => i === 0).length).toBeLessThan(150);
+    }
+    expect(cross).toBeGreaterThan(400);
+    void LAMP_COLOURS;
+    void PATTERNS;
   });
 
   it("level 5's other manual would send the Fixer wrong at least some of the time", () => {

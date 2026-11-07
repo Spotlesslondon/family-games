@@ -490,11 +490,10 @@ function Icon({ p }: { p: Picture }) {
           <rect x="4" y="24" width="32" height="7" rx="3" fill="#8e5bd3" stroke={c} strokeWidth="2.5" />
         </svg>
       );
-    case "key":
+    case "heart":
       return (
         <svg viewBox="0 0 40 40" className="h-9 w-9" aria-hidden>
-          <circle cx="13" cy="20" r="7" fill="#f4c542" stroke={c} strokeWidth="2.5" />
-          <path d="M20 20h16v6h-4v-3h-3v4h-4v-4h-5" fill="#f4c542" stroke={c} strokeWidth="2.5" strokeLinejoin="round" />
+          <path d="M20 35 6 21a8 8 0 0 1 11-11l3 3 3-3a8 8 0 0 1 11 11z" fill="#e4572e" stroke={c} strokeWidth="2.5" strokeLinejoin="round" />
         </svg>
       );
     case "bell":

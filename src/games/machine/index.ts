@@ -22,6 +22,7 @@
 // the answers never leave the server. Each phone gets only its own view.
 
 import { registerGame } from "@/engine/registry";
+import { applyLampInstr, applyPictureInstr, buildManual, firstMatch, lampInstrFor, renderLampInstr, renderPictureInstr, renderRule, type PictureInstr } from "./manual";
 import { seededRng, shuffle } from "@/engine/rng";
 import { accept, noop, reject, type GameContext, type GameModule, type TurnResult } from "@/engine/types";
 import {
@@ -35,7 +36,6 @@ import {
   PATTERNS,
   PICTURES,
 
-  type LampColour,
   type LevelSpec,
   type MachineLength,
   type MachineLevel,
@@ -58,25 +58,6 @@ export interface Machine {
   answers: { lamps: number[]; pictures: Picture[]; dial: number[] };
 }
 
-function idx<T>(list: T[], keep: (x: T) => boolean): number[] {
-  return list.map((x, i) => (keep(x) ? i : -1)).filter((i) => i >= 0);
-}
-
-const LAMP_RULES = [
-  {
-    lines: ["Press the lamps that are LIT first, left to right.", "Then press the lamps that are OFF, left to right."],
-    order: (lamps: { lit: boolean; colour: LampColour }[]) => [...idx(lamps, (l) => l.lit), ...idx(lamps, (l) => !l.lit)],
-  },
-  {
-    lines: ["Press the lamps that are OFF first, right to left.", "Then press the lamps that are LIT, left to right."],
-    order: (lamps: { lit: boolean; colour: LampColour }[]) => [...idx(lamps, (l) => !l.lit).reverse(), ...idx(lamps, (l) => l.lit)],
-  },
-  {
-    lines: [] as string[],
-    order: (lamps: { lit: boolean; colour: LampColour }[], colours?: LampColour[]) => colours!.map((c) => lamps.findIndex((l) => l.colour === c)).filter((i) => i >= 0),
-  },
-];
-
 /** One click on from a position (1 to 6), or back. */
 const click = (pos: number, by: number) => ((((pos - 1 + by) % 6) + 6) % 6) + 1;
 
@@ -87,36 +68,43 @@ export function buildMachine(seed: number, level: MachineLevel): Machine {
   const view: MachineView = { serial: 100 + Math.floor(rng() * 900) };
   const cards: RuleCard[] = [];
 
-  // Lamps: some lit, at least one lit and one off.
+  // The machine first, all of it, because a rule may ask about any part of it.
   const colours = shuffle([...LAMP_COLOURS], rng).slice(0, spec.lamps);
   let lit: boolean[];
   do lit = colours.map(() => rng() < 0.5);
   while (!lit.some(Boolean) || lit.every(Boolean));
   view.lamps = colours.map((colour, i) => ({ colour, lit: lit[i] }));
-  const ruleIndex = spec.lampRules[Math.floor(rng() * spec.lampRules.length)];
-  let lampsAnswer: number[];
-  if (ruleIndex === 2) {
-    const order = shuffle([...LAMP_COLOURS], rng);
-    cards.push({ part: "lamps", title: "The lamps", lines: ["Press the lamps in this colour order:", order.join(", ") + ".", "Skip any colour the machine does not have."] });
-    lampsAnswer = LAMP_RULES[2].order(view.lamps, order);
-  } else {
-    cards.push({ part: "lamps", title: "The lamps", lines: [...LAMP_RULES[ruleIndex].lines] });
-    lampsAnswer = LAMP_RULES[ruleIndex].order(view.lamps);
-  }
-
-  // Pictures: the card lists every picture in an order; the machine shows some of them.
-  const order = shuffle([...PICTURES], rng);
-  const shown = shuffle(order.slice(), rng).slice(0, spec.pictures);
-  view.pictures = shown;
-  const picturesAnswer = order.filter((p) => shown.includes(p));
-  cards.push({ part: "pictures", title: "The picture row", lines: ["Press the picture keys in this order:", order.join(", ") + ".", "Skip any picture that is not on the machine."] });
-
-  // Dial: one pattern per turn on the machine; tables on the cards.
+  view.pictures = shuffle([...PICTURES], rng).slice(0, spec.pictures);
   const symbols = spec.dialLabels === "symbols" ? shuffle([...DIAL_SYMBOLS], rng) : undefined;
   const labelOf = (pos: number) => (symbols ? symbols[pos - 1] : String(pos));
   const patterns: Pattern[] = shuffle([...PATTERNS], rng).slice(0, spec.dialTurns);
   const light = spec.modifier === "light" ? LIGHTS[Math.floor(rng() * LIGHTS.length)] : undefined;
   view.dial = { patterns, labels: spec.dialLabels, symbols, light };
+
+  // Lamps: a manual of rules; the first that fits this machine is the one to follow.
+  const lampRules = buildManual(view, spec.lampRules, spec.crossParts, rng, (conds) => lampInstrFor(view, conds, rng));
+  const lampsAnswer = applyLampInstr(firstMatch(lampRules, view), view);
+  const lampLines = lampRules.map((r, i) => renderRule(r, i + 1, renderLampInstr));
+  const HOW = "Find the FIRST rule that fits this machine, checking them in order, and do what it says. A rule about a lamp or key the machine does not have never fits.";
+  if (spec.splitLamps) {
+    const k = Math.ceil(lampLines.length / 2);
+    cards.push({ part: "lamps", title: "The lamps, part 1 of 2", lines: [HOW, ...lampLines.slice(0, k), "If none of these fits, the rule is in part 2."] });
+    cards.push({ part: "lamps", title: "The lamps, part 2 of 2", lines: ["Only if no rule in part 1 fits:", ...lampLines.slice(k)] });
+  } else {
+    cards.push({ part: "lamps", title: "The lamps", lines: [HOW, ...lampLines] });
+  }
+
+  // Pictures: a plain order at the low levels, a manual of orders above.
+  let picturesAnswer: Picture[];
+  if (spec.pictureRules <= 1) {
+    const order = shuffle([...PICTURES], rng);
+    picturesAnswer = applyPictureInstr({ order, reversed: false }, view);
+    cards.push({ part: "pictures", title: "The picture row", lines: ["Press the picture keys in this order:", order.join(", ") + ".", "Skip any key that is not on the machine."] });
+  } else {
+    const picRules = buildManual<PictureInstr>(view, spec.pictureRules, spec.crossParts, rng, () => ({ order: shuffle([...PICTURES], rng), reversed: rng() < 0.3 }));
+    picturesAnswer = applyPictureInstr(firstMatch(picRules, view), view);
+    cards.push({ part: "pictures", title: "The picture row", lines: [HOW, ...picRules.map((r, i) => renderRule(r, i + 1, renderPictureInstr))] });
+  }
   const litCount = lit.filter(Boolean).length;
   const makeTable = () => {
     const settings = shuffle([1, 2, 3, 4, 5, 6], rng);

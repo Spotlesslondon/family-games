@@ -16,7 +16,7 @@ export const MAX_WOBBLES = 3;
 
 export const LAMP_COLOURS = ["red", "blue", "green", "yellow", "purple", "white"] as const;
 export type LampColour = (typeof LAMP_COLOURS)[number];
-export const PICTURES = ["sun", "star", "moon", "fish", "hat", "key", "bell", "boot"] as const;
+export const PICTURES = ["sun", "star", "moon", "fish", "hat", "heart", "bell", "boot"] as const;
 export type Picture = (typeof PICTURES)[number];
 export const PATTERNS = ["stripes", "dots", "waves", "checks", "zigzags", "rings"] as const;
 export type Pattern = (typeof PATTERNS)[number];
@@ -35,9 +35,15 @@ export const PART_NAMES: Record<PartKey, string> = { lamps: "The lamps", picture
  */
 export interface LevelSpec {
   lamps: number;
-  /** Which lamp rules may be drawn: 0 lit first, 1 off first reversed, 2 colour order. */
-  lampRules: number[];
+  /** How many rules the lamp manual holds (first match wins; the last is "Otherwise"). */
+  lampRules: number;
+  /** Whether the lamp manual is split over two cards. */
+  splitLamps: boolean;
   pictures: number;
+  /** How many rules the picture manual holds (1 means a plain order, no rules). */
+  pictureRules: number;
+  /** Whether a rule may ask about another part (the dial's pattern, a picture key, the serial). */
+  crossParts: boolean;
   /** How many turns the dial's combination has. */
   dialTurns: number;
   /** What the knob's positions are labelled with. */
@@ -54,19 +60,19 @@ export interface LevelSpec {
 }
 
 export const LEVELS: Record<MachineLevel, LevelSpec> = {
-  1: { lamps: 3, lampRules: [0, 2], pictures: 3, dialTurns: 1, dialLabels: "numbers", modifier: "none", dependency: false, manuals: 1, clock: 1, hints: true },
-  2: { lamps: 4, lampRules: [0, 1, 2], pictures: 4, dialTurns: 1, dialLabels: "numbers", modifier: "light", dependency: false, manuals: 1, clock: 1, hints: true },
-  3: { lamps: 4, lampRules: [0, 1, 2], pictures: 4, dialTurns: 2, dialLabels: "numbers", modifier: "none", dependency: true, manuals: 1, clock: 1, hints: true },
-  4: { lamps: 4, lampRules: [0, 1, 2], pictures: 4, dialTurns: 3, dialLabels: "symbols", modifier: "serial", dependency: true, manuals: 1, clock: 1, hints: true },
-  5: { lamps: 4, lampRules: [0, 1, 2], pictures: 4, dialTurns: 3, dialLabels: "symbols", modifier: "serial", dependency: false, manuals: 2, clock: 0.75, hints: false },
+  1: { lamps: 3, lampRules: 2, splitLamps: false, pictures: 3, pictureRules: 1, crossParts: false, dialTurns: 1, dialLabels: "numbers", modifier: "none", dependency: false, manuals: 1, clock: 1, hints: true },
+  2: { lamps: 4, lampRules: 3, splitLamps: false, pictures: 4, pictureRules: 1, crossParts: false, dialTurns: 1, dialLabels: "numbers", modifier: "light", dependency: false, manuals: 1, clock: 1, hints: true },
+  3: { lamps: 4, lampRules: 4, splitLamps: false, pictures: 4, pictureRules: 2, crossParts: true, dialTurns: 2, dialLabels: "numbers", modifier: "none", dependency: true, manuals: 1, clock: 1, hints: true },
+  4: { lamps: 4, lampRules: 5, splitLamps: false, pictures: 4, pictureRules: 3, crossParts: true, dialTurns: 3, dialLabels: "symbols", modifier: "serial", dependency: true, manuals: 1, clock: 1, hints: true },
+  5: { lamps: 4, lampRules: 6, splitLamps: true, pictures: 4, pictureRules: 3, crossParts: true, dialTurns: 3, dialLabels: "symbols", modifier: "serial", dependency: false, manuals: 2, clock: 0.75, hints: false },
 };
 
 export const LEVEL_NAMES: Record<MachineLevel, string> = {
-  1: "Level 1: one turn",
-  2: "Level 2: mind the light",
-  3: "Level 3: two turns, check the lamps",
-  4: "Level 4: three turns, symbols",
-  5: "Level 5: two manuals, tight clock",
+  1: "Level 1: find the rule that fits",
+  2: "Level 2: more rules, mind the light",
+  3: "Level 3: rules look across the machine, two turns",
+  4: "Level 4: three turns, symbols on the knob",
+  5: "Level 5: split manuals, tight clock",
 };
 
 /** The Fixer's view of the machine. What is on the screen, never the answer. */
