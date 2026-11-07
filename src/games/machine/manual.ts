@@ -218,6 +218,43 @@ function pick<T>(list: readonly T[], rng: () => number): T {
 }
 
 /**
+ * The fact a condition is about. Two conditions in one rule must be about
+ * different facts, or the rule reads as nonsense ("if exactly 1 lamp is lit
+ * and exactly 2 lamps are lit") or as padding ("if exactly 2 lamps are lit
+ * and 1 or more lamps are lit"). Seen on the test site, 7 Nov.
+ */
+export function factOf(c: Cond): string {
+  switch (c.kind) {
+    case "colour":
+    case "noColour":
+      return `colour:${c.colour}`;
+    case "litCount":
+    case "litAtLeast":
+      return "lit";
+    case "edge":
+      return `edge:${c.side}`;
+    case "serial":
+    case "serialEnds":
+      return "serial";
+    case "pattern":
+      return "pattern";
+    case "picture":
+      return `picture:${c.picture}`;
+  }
+}
+
+/** Two conditions about different facts; the second is redrawn until it is. */
+function drawPair(v: MachineView, wantA: boolean, wantB: boolean, cross: boolean, rng: () => number): Cond[] {
+  const a = drawCond(v, wantA, cross, rng);
+  let b = drawCond(v, wantB, cross, rng);
+  for (let tries = 0; tries < 12 && factOf(b) === factOf(a); tries++) b = drawCond(v, wantB, cross, rng);
+  // A machine with few facts can still collide; one condition is then enough
+  // (a false one keeps the rule false, a true one keeps it true).
+  if (factOf(b) === factOf(a)) return [wantA === wantB || !wantA ? a : b];
+  return [a, b];
+}
+
+/**
  * Build a manual of `count` rules where the first fitting rule sits at a
  * random place. Rules before it do not fit (near-misses); rules after it may
  * fit or not, which punishes reading past the first match. The last rule is
@@ -231,10 +268,10 @@ export function buildManual<I>(v: MachineView, count: number, cross: boolean, rn
     if (i === count - 1) conds = [];
     else if (i < target) {
       // must not fit: one false condition, sometimes joined with a true one
-      conds = rng() < 0.4 ? [drawCond(v, true, cross, rng), drawCond(v, false, cross, rng)] : [drawCond(v, false, cross, rng)];
+      conds = rng() < 0.4 ? drawPair(v, true, false, cross, rng) : [drawCond(v, false, cross, rng)];
       if (rng() < 0.5) conds.reverse();
     } else if (i === target) {
-      conds = rng() < 0.4 ? [drawCond(v, true, cross, rng), drawCond(v, true, cross, rng)] : [drawCond(v, true, cross, rng)];
+      conds = rng() < 0.4 ? drawPair(v, true, true, cross, rng) : [drawCond(v, true, cross, rng)];
     } else {
       conds = [drawCond(v, rng() < 0.5, cross, rng)];
     }

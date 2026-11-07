@@ -234,6 +234,36 @@ describe("Fix the Machine", () => {
     void PATTERNS;
   });
 
+  it("never pairs two conditions about the same fact in one rule", () => {
+    // "If exactly 1 lamp is lit and exactly 2 lamps are lit" was dealt on the
+    // test site on 7 Nov. The two halves of a rule must be about different
+    // things: a lamp count, a named colour, an edge, the serial, the dial, a key.
+    const fact = (c: string): string => {
+      if (/lamps? (is|are) lit/.test(c)) return "lit";
+      if (/serial/.test(c)) return "serial";
+      if (/dial shows/.test(c)) return "pattern";
+      const edge = c.match(/^the (leftmost|rightmost) lamp/);
+      if (edge) return `edge:${edge[1]}`;
+      const key = c.match(/(\w+) key$/);
+      if (key) return `picture:${key[1]}`;
+      const colour = c.match(/(red|green|blue|yellow|purple|white) lamp/) ?? c.match(/no lamp is (red|green|blue|yellow|purple|white)/);
+      if (colour) return `colour:${colour[1]}`;
+      throw new Error(`unreadable condition: ${c}`);
+    };
+    let pairs = 0;
+    for (const level of [1, 2, 3, 4, 5] as MachineLevel[]) {
+      for (let seed = 1; seed <= 400; seed++) {
+        const m = buildMachine(seed, level);
+        for (const r of readManual(m.cards.flatMap((c) => c.lines))) {
+          if (r.conds.length < 2) continue;
+          pairs++;
+          expect(new Set(r.conds.map(fact)).size, `${level}/${seed}: ${r.conds.join(" and ")}`).toBe(r.conds.length);
+        }
+      }
+    }
+    expect(pairs).toBeGreaterThan(500);
+  });
+
   it("level 5's other manual would send the Fixer wrong at least some of the time", () => {
     let differ = 0;
     for (let seed = 1; seed <= 100; seed++) {
