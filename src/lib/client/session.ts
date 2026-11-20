@@ -131,9 +131,27 @@ export async function postAsMember(path: string, body: unknown, init?: { keepali
   };
   if (init?.keepalive) return send(store.cachedToken());
   const res = await send(await store.token());
-  if (res.status !== 401) return res;
+  if (res.status !== 401) return reloadIfStale(res);
   store.invalidate();
-  return send(await store.token());
+  return reloadIfStale(await send(await store.token()));
+}
+
+/**
+ * A phone that loaded the app before a deploy keeps the old screens while the
+ * server moves on; the old code cannot show the new phases (Joshua's phone,
+ * 20 Nov 22:47). Every API answer names the server's build; when it is not the
+ * one this page was built from, reload once. Sign-in is in cookies and the
+ * game is on the server, so nothing is lost.
+ */
+function reloadIfStale(res: Response): Response {
+  const server = res.headers.get("x-asher-build");
+  const mine = process.env.NEXT_PUBLIC_BUILD;
+  if (!server || !mine || server === mine || typeof window === "undefined") return res;
+  const key = "asher-reloaded-for";
+  if (window.sessionStorage.getItem(key) === server) return res; // already tried once for this build
+  window.sessionStorage.setItem(key, server);
+  window.location.reload();
+  return res;
 }
 
 export const AVATAR_COLOURS = ["#FFC93C", "#8FA8FF", "#6FD3B7", "#FF7A66", "#E3A6F2"];
