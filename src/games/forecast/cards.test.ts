@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { CARDS_PER_FORECAST, FORECAST_CARDS, scoreCard, suitable } from "./cards";
 
 describe("forecast cards", () => {
-  it("carries exactly the approved batch: 12 everyday and 18 Christmas cards, unique keys", () => {
+  it("carries exactly the approved batches: 12 everyday and 68 Christmas cards, unique keys", () => {
     expect(FORECAST_CARDS.filter((c) => c.pack === "everyday")).toHaveLength(12);
-    expect(FORECAST_CARDS.filter((c) => c.pack === "christmas")).toHaveLength(18);
-    expect(new Set(FORECAST_CARDS.map((c) => c.key)).size).toBe(30);
+    expect(FORECAST_CARDS.filter((c) => c.pack === "christmas")).toHaveLength(68);
+    expect(new Set(FORECAST_CARDS.map((c) => c.key)).size).toBe(80);
     for (const c of FORECAST_CARDS) expect(c.text).not.toMatch(/\b(bet|wager)\b|—/i);
   });
 
