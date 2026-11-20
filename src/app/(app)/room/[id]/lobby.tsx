@@ -110,7 +110,7 @@ export function Lobby() {
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
   const [game, setGame] = useState<"mr-white" | "quiz" | "nerve" | "machine">("mr-white");
-  const [machineOpts, setMachineOpts] = useState<MachineOptions>({ pace: "normal", length: "normal", level: 1 });
+  const [machineOpts, setMachineOpts] = useState<MachineOptions>({ pace: "relaxed", length: "normal", level: 1 });
   const [nerveOpts, setNerveOpts] = useState<NerveOptions>({ pace: "normal", length: "normal", level: "normal" });
   const [quizLength, setQuizLength] = useState<QuizLength>("normal");
   const [quizTopic, setQuizTopic] = useState<QuizTopic>("mixed");
@@ -642,7 +642,7 @@ export function Lobby() {
               </div>
             ) : game === "machine" ? (
               <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Fix the Machine settings">
-                <p className="px-3 text-sm text-muted">One of you sees a jammed machine. Everyone else holds part of the rulebook. Talk it through and fix it before the clock runs out. Team score.</p>
+                <p className="px-3 text-sm text-muted">One of you sees the machine. Everyone else has the rules. Talk fast. 2 or more players.</p>
                 <div className="flex flex-col gap-2 px-3">
                   <span className="font-bold">Level</span>
                   <div className="flex flex-wrap gap-2" role="group" aria-label="Level">
@@ -659,10 +659,11 @@ export function Lobby() {
                     ))}
                   </div>
                   <span className="text-sm text-muted">{LEVEL_NAMES[machineOpts.level]}</span>
+                  <span className="text-sm font-bold">New? Start at level 1.</span>
                 </div>
                 {([
-                  ["pace", "Clock", ["relaxed", "normal", "quick"], { relaxed: "Relaxed, 4 minutes", normal: "Normal, 3 minutes", quick: "Quick, 2 minutes" }],
-                  ["length", "Rounds", ["short", "normal", "long"], { short: "1 round", normal: "3 rounds", long: "5 rounds" }],
+                  ["pace", "Pace", ["relaxed", "normal", "quick"], { relaxed: "Relaxed (4 minutes)", normal: "Normal (3 minutes)", quick: "Quick (2 minutes)" }],
+                  ["length", "Length", ["short", "normal", "long"], { short: "1 machine", normal: "3 machines", long: "5 machines" }],
                 ] as const).map(([key, label, order, names]) => (
                   <button
                     key={key}

@@ -10,37 +10,52 @@
 // Every condition is something the Fixer can see; every instruction is
 // something the Fixer can do. The generator builds rules as data, renders
 // them to words with the templates here, and the test parses those words back
-// to check the answers follow the text.
+// to check the answers follow the text. The wording is the CEO seat's to
+// rewrite; the templates are listed in claude/tech-machine-v1.md.
 
 import { shuffle } from "@/engine/rng";
-import { LAMP_COLOURS, PATTERNS, PICTURES, type LampColour, type MachineView, type Pattern, type Picture } from "./shape";
+import { KEY_COLOURS, LAMP_COLOURS, PATTERNS, PICTURES, type Key, type KeyColour, type Lamp, type LampColour, type MachineView, type Pattern, type Picture } from "./shape";
 
 // ---- conditions ------------------------------------------------------------
 
 export type Cond =
-  | { kind: "colour"; colour: LampColour; lit: boolean | null } // a {colour} lamp (that is lit / off)
+  | { kind: "colour"; colour: LampColour; state: null | "lit" | "off" | "blinking" }
   | { kind: "noColour"; colour: LampColour }
   | { kind: "litCount"; n: number }
   | { kind: "litAtLeast"; n: number }
+  | { kind: "blinkCount"; n: number }
   | { kind: "edge"; side: "leftmost" | "rightmost"; lit: boolean }
   | { kind: "serial"; parity: "even" | "odd" }
   | { kind: "serialEnds"; digit: number }
   | { kind: "pattern"; pattern: Pattern }
-  | { kind: "picture"; picture: Picture; present: boolean };
+  | { kind: "picture"; picture: Picture; present: boolean }
+  | { kind: "flipped"; picture: Picture; flipped: boolean }
+  | { kind: "flipCount"; n: number }
+  | { kind: "keyColour"; picture: Picture; colour: KeyColour }
+  | { kind: "anyKeyColour"; colour: KeyColour; present: boolean };
+
+const isLit = (l: Lamp) => l.lit;
+const isBlink = (l: Lamp) => l.lit && l.blink === true;
 
 export function evalCond(c: Cond, v: MachineView): boolean {
   const lamps = v.lamps ?? [];
+  const keys = v.pictures ?? [];
   switch (c.kind) {
     case "colour": {
       const l = lamps.find((x) => x.colour === c.colour);
-      return !!l && (c.lit === null || l.lit === c.lit);
+      if (!l) return false;
+      if (c.state === null) return true;
+      if (c.state === "blinking") return isBlink(l);
+      return l.lit === (c.state === "lit");
     }
     case "noColour":
       return !lamps.some((x) => x.colour === c.colour);
     case "litCount":
-      return lamps.filter((x) => x.lit).length === c.n;
+      return lamps.filter(isLit).length === c.n;
     case "litAtLeast":
-      return lamps.filter((x) => x.lit).length >= c.n;
+      return lamps.filter(isLit).length >= c.n;
+    case "blinkCount":
+      return lamps.filter(isBlink).length === c.n;
     case "edge": {
       const l = c.side === "leftmost" ? lamps[0] : lamps[lamps.length - 1];
       return !!l && l.lit === c.lit;
@@ -50,22 +65,36 @@ export function evalCond(c: Cond, v: MachineView): boolean {
     case "serialEnds":
       return v.serial % 10 === c.digit;
     case "pattern":
-      return (v.dial?.patterns ?? []).includes(c.pattern);
+      return (v.dial?.turns ?? []).some((t) => t.pattern === c.pattern);
     case "picture":
-      return (v.pictures ?? []).includes(c.picture) === c.present;
+      return keys.some((k) => k.picture === c.picture) === c.present;
+    case "flipped": {
+      const k = keys.find((x) => x.picture === c.picture);
+      return !!k && (k.flipped === true) === c.flipped;
+    }
+    case "flipCount":
+      return keys.filter((k) => k.flipped).length === c.n;
+    case "keyColour": {
+      const k = keys.find((x) => x.picture === c.picture);
+      return !!k && k.colour === c.colour;
+    }
+    case "anyKeyColour":
+      return keys.some((k) => k.colour === c.colour) === c.present;
   }
 }
 
 export function renderCond(c: Cond): string {
   switch (c.kind) {
     case "colour":
-      return c.lit === null ? `there is a ${c.colour} lamp` : `the ${c.colour} lamp is ${c.lit ? "LIT" : "OFF"}`;
+      return c.state === null ? `there is a ${c.colour} lamp` : `the ${c.colour} lamp is ${c.state.toUpperCase()}`;
     case "noColour":
       return `no lamp is ${c.colour}`;
     case "litCount":
       return `exactly ${c.n} ${c.n === 1 ? "lamp is" : "lamps are"} lit`;
     case "litAtLeast":
       return `${c.n} or more lamps are lit`;
+    case "blinkCount":
+      return c.n === 0 ? "no lamp is blinking" : `exactly ${c.n} ${c.n === 1 ? "lamp is" : "lamps are"} blinking`;
     case "edge":
       return `the ${c.side} lamp is ${c.lit ? "LIT" : "OFF"}`;
     case "serial":
@@ -76,6 +105,47 @@ export function renderCond(c: Cond): string {
       return `the dial shows ${c.pattern}`;
     case "picture":
       return c.present ? `there is a ${c.picture} key` : `there is no ${c.picture} key`;
+    case "flipped":
+      return `the ${c.picture} key is ${c.flipped ? "upside down" : "the right way up"}`;
+    case "flipCount":
+      return c.n === 0 ? "no key is upside down" : `exactly ${c.n} ${c.n === 1 ? "key is" : "keys are"} upside down`;
+    case "keyColour":
+      return `the ${c.picture} key is ${c.colour}`;
+    case "anyKeyColour":
+      return c.present ? `there is a ${c.colour} key` : `there is no ${c.colour} key`;
+  }
+}
+
+/**
+ * The fact a condition is about. Two conditions in one rule must be about
+ * different facts, or the rule reads as nonsense ("if exactly 1 lamp is lit
+ * and exactly 2 lamps are lit") or as padding. Seen on the test site, 7 Nov.
+ */
+export function factOf(c: Cond): string {
+  switch (c.kind) {
+    case "colour":
+    case "noColour":
+      return `colour:${c.colour}`;
+    case "litCount":
+    case "litAtLeast":
+      return "lit";
+    case "blinkCount":
+      return "blink";
+    case "edge":
+      return `edge:${c.side}`;
+    case "serial":
+    case "serialEnds":
+      return "serial";
+    case "pattern":
+      return "pattern";
+    case "picture":
+    case "flipped":
+    case "keyColour":
+      return `key:${c.picture}`;
+    case "flipCount":
+      return "flips";
+    case "anyKeyColour":
+      return `keycolour:${c.colour}`;
   }
 }
 
@@ -87,24 +157,26 @@ export type LampInstr =
   | { kind: "allLeft" }
   | { kind: "allRight" }
   | { kind: "litRightThenOffRight" }
+  | { kind: "blinkFirst" } // blinking left to right, then the rest left to right
   | { kind: "colourFirst"; colour: LampColour } // that lamp first, then the rest left to right
   | { kind: "colourOrder"; order: LampColour[] };
 
-const idx = (lamps: { lit: boolean }[], keep: (l: { lit: boolean }) => boolean) => lamps.map((l, i) => (keep(l) ? i : -1)).filter((i) => i >= 0);
+const idx = (lamps: Lamp[], keep: (l: Lamp) => boolean) => lamps.map((l, i) => (keep(l) ? i : -1)).filter((i) => i >= 0);
 
-export function applyLampInstr(ins: LampInstr, v: MachineView): number[] {
-  const lamps = v.lamps ?? [];
+export function applyLampInstr(ins: LampInstr, lamps: Lamp[]): number[] {
   switch (ins.kind) {
     case "litFirst":
-      return [...idx(lamps, (l) => l.lit), ...idx(lamps, (l) => !l.lit)];
+      return [...idx(lamps, isLit), ...idx(lamps, (l) => !l.lit)];
     case "offFirstReverse":
-      return [...idx(lamps, (l) => !l.lit).reverse(), ...idx(lamps, (l) => l.lit)];
+      return [...idx(lamps, (l) => !l.lit).reverse(), ...idx(lamps, isLit)];
     case "allLeft":
       return lamps.map((_, i) => i);
     case "allRight":
       return lamps.map((_, i) => i).reverse();
     case "litRightThenOffRight":
-      return [...idx(lamps, (l) => l.lit).reverse(), ...idx(lamps, (l) => !l.lit).reverse()];
+      return [...idx(lamps, isLit).reverse(), ...idx(lamps, (l) => !l.lit).reverse()];
+    case "blinkFirst":
+      return [...idx(lamps, isBlink), ...idx(lamps, (l) => !isBlink(l))];
     case "colourFirst": {
       const first = lamps.findIndex((l) => l.colour === ins.colour);
       return [first, ...lamps.map((_, i) => i).filter((i) => i !== first)];
@@ -126,6 +198,8 @@ export function renderLampInstr(ins: LampInstr): string {
       return "press every lamp, right to left";
     case "litRightThenOffRight":
       return "press the LIT lamps right to left, then the OFF lamps right to left";
+    case "blinkFirst":
+      return "press the BLINKING lamps left to right, then the rest left to right";
     case "colourFirst":
       return `press the ${ins.colour} lamp first, then the rest left to right`;
     case "colourOrder":
@@ -138,16 +212,21 @@ export function renderLampInstr(ins: LampInstr): string {
 export interface PictureInstr {
   order: Picture[];
   reversed: boolean;
+  /** Some keys go first, left to right as they sit on the machine; then the rest in the order. */
+  first?: "flipped" | { colour: KeyColour };
 }
 
-export function applyPictureInstr(ins: PictureInstr, v: MachineView): Picture[] {
-  const shown = v.pictures ?? [];
-  const seq = ins.order.filter((p) => shown.includes(p));
-  return ins.reversed ? seq.reverse() : seq;
+export function applyPictureInstr(ins: PictureInstr, keys: Key[]): Picture[] {
+  const head = ins.first === undefined ? [] : keys.filter((k) => (ins.first === "flipped" ? k.flipped === true : k.colour === ins.first!.colour)).map((k) => k.picture);
+  const rest = ins.order.filter((p) => keys.some((k) => k.picture === p) && !head.includes(p));
+  return [...head, ...(ins.reversed ? rest.reverse() : rest)];
 }
 
 export function renderPictureInstr(ins: PictureInstr): string {
-  return `press the keys in this order${ins.reversed ? ", BACKWARDS" : ""}, skipping any key the machine does not have: ${ins.order.join(", ")}`;
+  const list = `${ins.order.join(", ")}`;
+  if (ins.first === undefined) return `press the keys in this order${ins.reversed ? ", BACKWARDS" : ""}, skipping any key the machine does not have: ${list}`;
+  const who = ins.first === "flipped" ? "the UPSIDE-DOWN keys" : `the ${ins.first.colour} keys`;
+  return `press ${who} left to right, then the rest in this order${ins.reversed ? ", BACKWARDS" : ""}, skipping any key the machine does not have: ${list}`;
 }
 
 // ---- rules and manuals -----------------------------------------------------
@@ -168,49 +247,12 @@ export function firstMatch<I>(rules: Rule<I>[], v: MachineView): I {
   return rules[rules.length - 1].instr;
 }
 
-/**
- * A condition drawn from this machine, true or false as asked. False ones are
- * near-misses: the same facts, slightly wrong, so the Helper has to ask
- * precisely. `cross` allows conditions about the serial, the dial and the keys.
- */
-export function drawCond(v: MachineView, want: boolean, cross: boolean, rng: () => number): Cond {
-  const lamps = v.lamps ?? [];
-  const lit = lamps.filter((l) => l.lit).length;
-  const makers: (() => Cond)[] = [
-    () => {
-      const l = lamps[Math.floor(rng() * lamps.length)];
-      return want ? { kind: "colour", colour: l.colour, lit: rng() < 0.5 ? null : l.lit } : { kind: "colour", colour: l.colour, lit: !l.lit };
-    },
-    () => {
-      const absent = LAMP_COLOURS.filter((c) => !lamps.some((l) => l.colour === c));
-      const present = lamps.map((l) => l.colour);
-      return want ? (rng() < 0.5 ? { kind: "noColour", colour: pick(absent, rng) } : { kind: "colour", colour: pick(present, rng), lit: null }) : rng() < 0.5 ? { kind: "noColour", colour: pick(present, rng) } : { kind: "colour", colour: pick(absent, rng), lit: null };
-    },
-    () => (want ? { kind: "litCount", n: lit } : { kind: "litCount", n: lit + (lit > 1 && rng() < 0.5 ? -1 : 1) }),
-    () => (want ? { kind: "litAtLeast", n: Math.max(1, lit - (rng() < 0.5 ? 1 : 0)) } : { kind: "litAtLeast", n: lit + 1 }),
-    () => {
-      const side = rng() < 0.5 ? "leftmost" : "rightmost";
-      const l = side === "leftmost" ? lamps[0] : lamps[lamps.length - 1];
-      return { kind: "edge", side, lit: want ? l.lit : !l.lit };
-    },
-  ];
-  if (cross) {
-    makers.push(
-      () => ({ kind: "serial", parity: (v.serial % 2 === 0) === want ? "even" : "odd" }),
-      () => ({ kind: "serialEnds", digit: want ? v.serial % 10 : (v.serial % 10 + 1 + Math.floor(rng() * 8)) % 10 }),
-      () => {
-        const shown = v.dial?.patterns ?? [];
-        const other = PATTERNS.filter((p) => !shown.includes(p));
-        return { kind: "pattern", pattern: want ? pick(shown, rng) : pick(other, rng) };
-      },
-      () => {
-        const shown = v.pictures ?? [];
-        const other = PICTURES.filter((p) => !shown.includes(p));
-        return rng() < 0.5 ? { kind: "picture", picture: pick(shown, rng), present: want } : { kind: "picture", picture: pick(other, rng), present: !want };
-      }
-    );
-  }
-  return pick(makers, rng)();
+/** Which parts of the machine a manual's conditions may ask about. */
+export interface Scope {
+  lamps: boolean;
+  keys: boolean;
+  serial: boolean;
+  dial: boolean;
 }
 
 function pick<T>(list: readonly T[], rng: () => number): T {
@@ -218,36 +260,105 @@ function pick<T>(list: readonly T[], rng: () => number): T {
 }
 
 /**
- * The fact a condition is about. Two conditions in one rule must be about
- * different facts, or the rule reads as nonsense ("if exactly 1 lamp is lit
- * and exactly 2 lamps are lit") or as padding ("if exactly 2 lamps are lit
- * and 1 or more lamps are lit"). Seen on the test site, 7 Nov.
+ * A condition drawn from this machine, true or false as asked. False ones are
+ * near-misses: the same facts, slightly wrong, so the Helper has to ask
+ * precisely. The scope says which parts the condition may be about.
  */
-export function factOf(c: Cond): string {
-  switch (c.kind) {
-    case "colour":
-    case "noColour":
-      return `colour:${c.colour}`;
-    case "litCount":
-    case "litAtLeast":
-      return "lit";
-    case "edge":
-      return `edge:${c.side}`;
-    case "serial":
-    case "serialEnds":
-      return "serial";
-    case "pattern":
-      return "pattern";
-    case "picture":
-      return `picture:${c.picture}`;
+export function drawCond(v: MachineView, want: boolean, scope: Scope, rng: () => number): Cond {
+  const lamps = v.lamps ?? [];
+  const keys = v.pictures ?? [];
+  const lit = lamps.filter(isLit).length;
+  const blinking = lamps.filter(isBlink).length;
+  const hasBlink = lamps.some((l) => l.blink !== undefined);
+  const hasFlip = keys.some((k) => k.flipped !== undefined);
+  const hasColour = keys.some((k) => k.colour !== undefined);
+  const makers: (() => Cond)[] = [];
+  if (scope.lamps && lamps.length) {
+    makers.push(
+      () => {
+        const l = pick(lamps, rng);
+        if (want) {
+          const r = rng();
+          const state = r < 0.4 ? null : isBlink(l) && r < 0.7 ? "blinking" : l.lit ? "lit" : "off";
+          return { kind: "colour", colour: l.colour, state };
+        }
+        // Wrong about its state: off when lit, lit when off, blinking when steady.
+        const wrong: ("lit" | "off" | "blinking")[] = l.lit ? ["off"] : ["lit"];
+        if (hasBlink && !isBlink(l)) wrong.push("blinking");
+        return { kind: "colour", colour: l.colour, state: pick(wrong, rng) };
+      },
+      () => {
+        const absent = LAMP_COLOURS.filter((c) => !lamps.some((l) => l.colour === c));
+        const present = lamps.map((l) => l.colour);
+        // With every colour on the machine (six lamps) only the present-colour forms exist.
+        const useAbsent = absent.length > 0 && rng() < 0.5;
+        if (want) return useAbsent ? { kind: "noColour", colour: pick(absent, rng) } : { kind: "colour", colour: pick(present, rng), state: null };
+        return useAbsent ? { kind: "colour", colour: pick(absent, rng), state: null } : { kind: "noColour", colour: pick(present, rng) };
+      },
+      () => (want ? { kind: "litCount", n: lit } : { kind: "litCount", n: lit + (lit > 1 && rng() < 0.5 ? -1 : 1) }),
+      () => (want ? { kind: "litAtLeast", n: Math.max(1, lit - (rng() < 0.5 ? 1 : 0)) } : { kind: "litAtLeast", n: lit + 1 }),
+      () => {
+        const side = rng() < 0.5 ? "leftmost" : "rightmost";
+        const l = side === "leftmost" ? lamps[0] : lamps[lamps.length - 1];
+        return { kind: "edge", side, lit: want ? l.lit : !l.lit };
+      }
+    );
+    if (hasBlink) makers.push(() => (want ? { kind: "blinkCount", n: blinking } : { kind: "blinkCount", n: blinking + (blinking > 0 && rng() < 0.5 ? -1 : 1) }));
   }
+  if (scope.keys && keys.length) {
+    makers.push(() => {
+      const shown = keys.map((k) => k.picture);
+      const other = PICTURES.filter((p) => !shown.includes(p));
+      return rng() < 0.5 ? { kind: "picture", picture: pick(shown, rng), present: want } : { kind: "picture", picture: pick(other, rng), present: !want };
+    });
+    if (hasFlip) {
+      const flips = keys.filter((k) => k.flipped).length;
+      makers.push(
+        () => {
+          const k = pick(keys, rng);
+          return { kind: "flipped", picture: k.picture, flipped: want ? k.flipped === true : k.flipped !== true };
+        },
+        () => (want ? { kind: "flipCount", n: flips } : { kind: "flipCount", n: flips + (flips > 0 && rng() < 0.5 ? -1 : 1) })
+      );
+    }
+    if (hasColour) {
+      makers.push(
+        () => {
+          const k = pick(keys, rng);
+          const others = KEY_COLOURS.filter((c) => c !== k.colour);
+          return { kind: "keyColour", picture: k.picture, colour: want ? k.colour! : pick(others, rng) };
+        },
+        () => {
+          const used = KEY_COLOURS.filter((c) => keys.some((k) => k.colour === c));
+          const unused = KEY_COLOURS.filter((c) => !used.includes(c));
+          if (unused.length === 0 || rng() < 0.5) return { kind: "anyKeyColour", colour: pick(used, rng), present: want };
+          return { kind: "anyKeyColour", colour: pick(unused, rng), present: !want };
+        }
+      );
+    }
+  }
+  if (scope.serial) {
+    makers.push(
+      () => ({ kind: "serial", parity: (v.serial % 2 === 0) === want ? "even" : "odd" }),
+      () => ({ kind: "serialEnds", digit: want ? v.serial % 10 : (v.serial % 10 + 1 + Math.floor(rng() * 8)) % 10 })
+    );
+  }
+  if (scope.dial) {
+    makers.push(() => {
+      const shown = (v.dial?.turns ?? []).map((t) => t.pattern).filter((p): p is Pattern => p !== undefined);
+      const other = PATTERNS.filter((p) => !shown.includes(p));
+      return { kind: "pattern", pattern: want && shown.length ? pick(shown, rng) : pick(other, rng) };
+    });
+  }
+  if (makers.length === 0) throw new Error("no conditions in scope");
+  return pick(makers, rng)();
 }
 
 /** Two conditions about different facts; the second is redrawn until it is. */
-function drawPair(v: MachineView, wantA: boolean, wantB: boolean, cross: boolean, rng: () => number): Cond[] {
-  const a = drawCond(v, wantA, cross, rng);
-  let b = drawCond(v, wantB, cross, rng);
-  for (let tries = 0; tries < 12 && factOf(b) === factOf(a); tries++) b = drawCond(v, wantB, cross, rng);
+function drawPair(v: MachineView, wantA: boolean, wantB: boolean, scope: Scope, rng: () => number): Cond[] {
+  const a = drawCond(v, wantA, scope, rng);
+  let b = drawCond(v, wantB, scope, rng);
+  for (let tries = 0; tries < 12 && factOf(b) === factOf(a); tries++) b = drawCond(v, wantB, scope, rng);
   // A machine with few facts can still collide; one condition is then enough
   // (a false one keeps the rule false, a true one keeps it true).
   if (factOf(b) === factOf(a)) return [wantA === wantB || !wantA ? a : b];
@@ -260,7 +371,7 @@ function drawPair(v: MachineView, wantA: boolean, wantB: boolean, cross: boolean
  * fit or not, which punishes reading past the first match. The last rule is
  * "Otherwise".
  */
-export function buildManual<I>(v: MachineView, count: number, cross: boolean, rng: () => number, instrFor: (conds: Cond[]) => I): Rule<I>[] {
+export function buildManual<I>(v: MachineView, count: number, scope: Scope, rng: () => number, instrFor: (conds: Cond[]) => I): Rule<I>[] {
   const target = Math.floor(rng() * count); // may be the Otherwise rule
   const rules: Rule<I>[] = [];
   for (let i = 0; i < count; i++) {
@@ -268,18 +379,15 @@ export function buildManual<I>(v: MachineView, count: number, cross: boolean, rn
     if (i === count - 1) conds = [];
     else if (i < target) {
       // must not fit: one false condition, sometimes joined with a true one
-      conds = rng() < 0.4 ? drawPair(v, true, false, cross, rng) : [drawCond(v, false, cross, rng)];
+      conds = rng() < 0.4 ? drawPair(v, true, false, scope, rng) : [drawCond(v, false, scope, rng)];
       if (rng() < 0.5) conds.reverse();
     } else if (i === target) {
-      conds = rng() < 0.4 ? drawPair(v, true, true, cross, rng) : [drawCond(v, true, cross, rng)];
+      conds = rng() < 0.4 ? drawPair(v, true, true, scope, rng) : [drawCond(v, true, scope, rng)];
     } else {
-      conds = [drawCond(v, rng() < 0.5, cross, rng)];
+      conds = [drawCond(v, rng() < 0.5, scope, rng)];
     }
     rules.push({ conds, instr: instrFor(conds) });
   }
-  // Make sure the manual really has a first match at `target`: it does by
-  // construction, but a drawn "true" pair could be contradictory only if the
-  // machine changed, which it cannot.
   return rules;
 }
 
@@ -288,8 +396,29 @@ export function lampInstrFor(v: MachineView, conds: Cond[], rng: () => number): 
   const lamps = v.lamps ?? [];
   const named = conds.find((c): c is Extract<Cond, { kind: "colour" }> => c.kind === "colour");
   const kinds: LampInstr[] = [{ kind: "litFirst" }, { kind: "offFirstReverse" }, { kind: "allLeft" }, { kind: "allRight" }, { kind: "litRightThenOffRight" }, { kind: "colourOrder", order: shuffle([...LAMP_COLOURS], rng) }];
+  if (lamps.some((l) => l.blink !== undefined)) kinds.push({ kind: "blinkFirst" }, { kind: "blinkFirst" });
   // "Press the X lamp first" only where the rule itself guarantees an X lamp.
   if (named) kinds.push({ kind: "colourFirst", colour: named.colour });
   else if (lamps.length) kinds.push({ kind: "colourFirst", colour: pick(lamps, rng).colour });
   return pick(kinds, rng);
+}
+
+/** A picture instruction for this machine: an order, and at the harder levels some keys first. */
+export function pictureInstrFor(v: MachineView, rng: () => number): PictureInstr {
+  const keys = v.pictures ?? [];
+  const hasFlip = keys.some((k) => k.flipped !== undefined);
+  const hasColour = keys.some((k) => k.colour !== undefined);
+  const base: PictureInstr = { order: shuffle([...PICTURES], rng), reversed: rng() < 0.3 };
+  // A colour the machine really has, so "the red keys first" always means something.
+  const used = KEY_COLOURS.filter((c) => keys.some((k) => k.colour === c));
+  const byColour = (): PictureInstr => ({ ...base, first: { colour: pick(used, rng) } });
+  const r = rng();
+  if (hasFlip && hasColour && used.length) {
+    if (r < 0.35) return { ...base, first: "flipped" };
+    if (r < 0.7) return byColour();
+    return base;
+  }
+  if (hasFlip && r < 0.5) return { ...base, first: "flipped" };
+  if (hasColour && used.length && r < 0.5) return byColour();
+  return base;
 }

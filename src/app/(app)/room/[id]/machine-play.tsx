@@ -1,13 +1,15 @@
 "use client";
 
 // Fix the Machine on a phone. The Fixer sees the machine and nobody else
-// does; each Helper sees their piece of the rulebook and nobody else's. The
-// talking happens at the table, not on the screen.
+// does; every Helper sees the whole rulebook (Joshua, 20 Nov: "everyone
+// should see the rule book") and nobody sees the answer. The talking happens
+// at the table, not on the screen. Words are the CEO seat's copy deck
+// (claude/machine-review-v1.md).
 
 import { useEffect, useState } from "react";
 import { useServerOffset } from "@/lib/client/clock";
 import { message } from "@/lib/client/session";
-import { LEVELS, MAX_WOBBLES, PART_NAMES, type DialSymbol, type LampColour, type MachineLength, type MachineLevel, type MachineMine, type MachinePace, type MachinePublic, type MachineView, type PartKey, type Pattern, type Picture } from "@/games/machine/shape";
+import { LEVELS, MAX_WOBBLES, PART_NAMES, type DialSymbol, type KeyColour, type Lamp, type LampColour, type MachineLength, type MachineLevel, type MachineMine, type MachinePace, type MachinePublic, type MachineView, type PartKey, type Pattern, type Picture, type RuleCard } from "@/games/machine/shape";
 import type { Person } from "./mr-white-play";
 
 type Act = (type: string, payload?: Record<string, unknown>) => Promise<{ ok?: boolean; reason?: string } | null>;
@@ -16,6 +18,9 @@ const primary = "btn btn-primary h-16 w-full font-display text-2xl font-bold tex
 const secondary = "btn btn-secondary h-14 w-full font-display text-xl";
 
 const LAMP_FILL: Record<LampColour, string> = { red: "#e4572e", blue: "#2e6fe4", green: "#3da35d", yellow: "#f4c542", purple: "#8e5bd3", white: "#f7f3e8" };
+const KEY_FILL: Record<KeyColour, string> = { red: "#f3a58f", blue: "#9dbcf2", green: "#a6d8b3", yellow: "#f9e08f" };
+
+const ORDINAL = ["First", "Second", "Third"];
 
 export function MachinePlay({
   phase,
@@ -48,6 +53,7 @@ export function MachinePlay({
   const name = (id: string) => (id === me ? "You" : people.get(id)?.name || "Someone");
   const total = Object.keys(s.parts ?? {}).length;
   const fixed = Object.values(s.parts ?? {}).filter((v) => v === "fixed").length;
+  const hostName = people.get(hostId)?.name ?? "the host";
 
   async function attempt(part: PartKey, answer: unknown) {
     if (busy) return false;
@@ -65,31 +71,83 @@ export function MachinePlay({
   const header = (
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm font-bold tracking-widest text-muted">
-        ROUND {s.round} OF {s.settings.rounds} · LEVEL {s.settings.level}
+        {s.round > 0 ? `MACHINE ${s.round} OF ${s.settings.rounds}` : `${s.settings.rounds} ${s.settings.rounds === 1 ? "MACHINE" : "MACHINES"}`} · LEVEL {s.settings.level}
       </span>
-      <Wobbles n={s.wobbles} />
+      {s.round > 0 && <Wobbles n={s.wobbles} />}
     </div>
   );
 
-  if (phase === "round_over" && s.last) {
-    const L = s.last;
+  if (phase === "briefing") {
     return (
       <section className="flex flex-1 flex-col gap-4">
         {header}
-        <h2 className="font-display text-4xl font-bold leading-tight">{L.won ? "Fixed!" : L.popped === "time" ? "Out of time. Pop!" : "Too many wobbles. Pop!"}</h2>
-        <p className="text-lg">
-          {L.fixed} of {total} {total === 1 ? "part" : "parts"} fixed{L.wobbles ? `, ${L.wobbles} ${L.wobbles === 1 ? "wobble" : "wobbles"}` : ", no wobbles"}. {L.points} {L.points === 1 ? "point" : "points"} for the team.
+        <h2 className="font-display text-4xl font-bold leading-tight">How to fix it</h2>
+        <ul className="flex list-disc flex-col gap-2 pl-5 text-lg">
+          <li>The Fixer is the only one who can see the machine.</li>
+          <li>Everyone else has the rulebook.</li>
+          <li>Fixer: say what you see and answer every question.</li>
+          <li>Helpers: ask questions until you find the rule that fits. Then say what to do.</li>
+          <li>More than one Helper? Share out the parts: one takes the lamps, one the dial.</li>
+          <li>Only the Fixer touches the machine.</li>
+          <li>A wrong try is a wobble. Three wobbles and it goes pop.</li>
+        </ul>
+        {s.nextFixerId && <p className="font-bold">First up: {name(s.nextFixerId)} {s.nextFixerId === me ? "are" : "is"} the Fixer.</p>}
+        {error && <p role="alert" className="text-center font-bold text-alert">{error}</p>}
+        {isHost ? (
+          <button type="button" disabled={busy} onClick={() => go("deal")} className={`${primary} mt-auto`}>
+            Deal the machine
+          </button>
+        ) : (
+          <p className="mt-auto text-center text-muted">Waiting for {hostName} to deal the machine.</p>
+        )}
+      </section>
+    );
+  }
+
+  async function go(type: string, payload?: Record<string, unknown>) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const out = await act(type, payload);
+    setBusy(false);
+    if (out && out.ok === false) setError(message(out.reason ?? "server_error"));
+  }
+
+  if (phase === "round_over" && s.last) {
+    const L = s.last;
+    const last = s.round >= s.settings.rounds;
+    return (
+      <section className="flex flex-1 flex-col gap-4">
+        {header}
+        <h2 className="font-display text-4xl font-bold leading-tight">{L.won ? "Fixed!" : "Pop!"}</h2>
+        {L.won ? (
+          <p className="text-lg">
+            All {total} parts fixed, {L.wobbles ? `${L.wobbles} ${L.wobbles === 1 ? "wobble" : "wobbles"}.` : "no wobbles. Clean fix: 1 extra point."}
+          </p>
+        ) : (
+          <p className="text-lg">
+            {L.popped === "time" ? "The clock ran out." : "Three wobbles and the machine gave up."} {L.fixed} of {total} parts fixed.
+          </p>
+        )}
+        <p className="text-lg font-bold">
+          {L.points} {L.points === 1 ? "point" : "points"} for the team.
         </p>
         <div className="card flex items-center justify-between px-5 py-4">
           <span className="font-bold">Team score</span>
           <span className="font-display text-3xl font-bold">{s.score}</span>
         </div>
+        {!last && s.nextFixerId && (
+          <p className="text-muted">
+            {L.won ? "" : "On to the next one. "}Next: Machine {s.round + 1}. {name(s.nextFixerId)} {s.nextFixerId === me ? "are" : "is"} the Fixer.
+          </p>
+        )}
+        {error && <p role="alert" className="text-center font-bold text-alert">{error}</p>}
         {isHost ? (
-          <button type="button" disabled={busy} onClick={() => act("next_round", { round: s.round })} className={`${primary} mt-auto`}>
-            {s.round >= s.settings.rounds ? "See the final score" : "Next round"}
+          <button type="button" disabled={busy} onClick={() => go("deal", { round: s.round })} className={`${primary} mt-auto`}>
+            {last ? "See the final score" : "Deal the next machine"}
           </button>
         ) : (
-          <p className="mt-auto text-center text-muted">Waiting for the host</p>
+          <p className="mt-auto text-center text-muted">Waiting for {hostName}</p>
         )}
       </section>
     );
@@ -98,6 +156,7 @@ export function MachinePlay({
   const fixerName = name(s.fixerId);
   const hints = LEVELS[s.settings.level]?.hints ?? true;
   const clock = <Clock endsAt={phaseEndsAt} fire={() => act("advance_if_expired")} />;
+  const flash = <Flash flash={s.flash} />;
 
   if (mine?.role === "fixer" && mine.round === s.round) {
     return (
@@ -105,11 +164,10 @@ export function MachinePlay({
         {header}
         {clock}
         <h2 className="font-display text-3xl font-bold leading-tight">You are the Fixer</h2>
-        <p className="text-muted">Say what you see. The others have the rulebook, but they cannot see the machine. Serial number {mine.view.serial}.</p>
-        <p className="text-sm font-bold">{fixed} of {total} fixed.</p>
-        <CardIndex cards={s.cards} name={name} me={me} />
+        <p className="text-muted">Only you can see the machine. Say what you see. Serial number {mine.view.serial}.</p>
+        {flash}
         {error && <p role="alert" className="text-center font-bold text-alert">{error}</p>}
-        {s.parts.lamps && <Lamps view={mine.view} hints={hints} fixed={s.parts.lamps === "fixed"} busy={busy} onTry={(a) => attempt("lamps", a)} />}
+        {s.parts.lamps && <Lamps key={`lamps-${s.parts.lamps}`} view={mine.view} hints={hints} state={s.parts.lamps} busy={busy} onTry={(a) => attempt("lamps", a)} />}
         {s.parts.pictures && <PictureRow view={mine.view} hints={hints} fixed={s.parts.pictures === "fixed"} busy={busy} onTry={(a) => attempt("pictures", a)} />}
         {s.parts.dial && <Dial view={mine.view} hints={hints} fixed={s.parts.dial === "fixed"} busy={busy} onTry={(a) => attempt("dial", a)} />}
       </section>
@@ -121,21 +179,10 @@ export function MachinePlay({
       <section className="flex flex-1 flex-col gap-4">
         {header}
         {clock}
-        <h2 className="font-display text-3xl font-bold leading-tight">You hold part of the rulebook</h2>
-        <p className="text-muted">{fixerName} is the Fixer and can see the machine. Read your rules out loud. Do not show your phone.</p>
-        <p className="text-sm font-bold">{fixed} of {total} fixed.</p>
-        <CardIndex cards={s.cards} name={name} me={me} />
-        {mine.cards.map((c, i) => (
-          <div key={i} className="card flex flex-col gap-2 px-5 py-4">
-            <span className="text-xs font-bold tracking-widest text-muted">{c.title.toUpperCase()}</span>
-            {c.lines.map((l, j) => (
-              <p key={j} className={j === 0 ? "font-bold" : "text-lg"}>
-                {l}
-              </p>
-            ))}
-            {s.parts[c.part] === "fixed" && <span className="self-start rounded-full bg-go px-3 py-1 text-sm font-extrabold">Fixed</span>}
-          </div>
-        ))}
+        <h2 className="font-display text-3xl font-bold leading-tight">You are a Helper</h2>
+        <p className="text-muted">{fixerName} is the Fixer. Ask them questions to find the rule that fits.</p>
+        {flash}
+        <Rulebook cards={mine.cards} parts={s.parts} />
       </section>
     );
   }
@@ -145,38 +192,108 @@ export function MachinePlay({
       {header}
       {clock}
       <h2 className="font-display text-3xl font-semibold leading-tight">Watching this one</h2>
-      <p className="text-muted">{fixerName} is fixing the machine. {fixed} of {total} fixed.</p>
+      <p className="text-muted">
+        {fixerName} is fixing the machine. {fixed} of {total} fixed.
+      </p>
+      {flash}
     </section>
   );
 }
 
-/** The rulebook's index: every card and who holds it. Everyone sees this; only a holder sees the words. */
-function CardIndex({ cards, name, me }: { cards: MachinePublic["cards"]; name: (id: string) => string; me: string }) {
-  if (!cards?.length) return null;
+/** A line every phone shows for a moment: a part fixed, a wobble, the lamps changing. */
+function Flash({ flash }: { flash: MachinePublic["flash"] }) {
+  // Hidden once its moment has passed; a new flash (a higher n) shows again.
+  const [hidden, setHidden] = useState<number | null>(null);
+  const n = flash?.n ?? null;
+  useEffect(() => {
+    if (n === null) return;
+    const id = setTimeout(() => setHidden(n), 4000);
+    return () => clearTimeout(id);
+  }, [n]);
+  if (!flash || hidden === flash.n) return null;
+  const wobble = flash.text.startsWith("Wobble");
   return (
-    <div className="flex flex-col gap-1 rounded-2xl bg-surface-2 px-4 py-3">
-      <span className="text-xs font-bold tracking-widest text-muted">THE RULEBOOK</span>
-      {cards.map((c) => (
-        <p key={c.title} className="text-sm">
-          <span className="font-bold">{c.title}:</span> {c.holders.map((h) => (h === me ? "you" : name(h))).join(" and ")}
-        </p>
-      ))}
+    <p role="status" className={`rounded-2xl px-4 py-2 text-center font-display text-xl font-bold ${wobble ? "bg-alert text-white" : "bg-go text-ink"}`}>
+      {flash.text}
+    </p>
+  );
+}
+
+/** The whole rulebook, in tabs by part. Every Helper sees all of it; the Fixer never does. */
+function Rulebook({ cards, parts }: { cards: RuleCard[]; parts: MachinePublic["parts"] }) {
+  const tabs = (["lamps", "pictures", "dial", "tag"] as const).filter((t) => cards.some((c) => c.part === t));
+  const [tab, setTab] = useState<(typeof tabs)[number]>(tabs[0]);
+  const label = (t: (typeof tabs)[number]) => (t === "tag" ? "Which manual" : PART_NAMES[t]);
+  const active = tabs.includes(tab) ? tab : tabs[0];
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs font-bold tracking-widest text-muted">THE RULEBOOK · THE FIXER CAN&apos;T SEE THIS</p>
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Rulebook">
+        {tabs.map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={active === t}
+            onClick={() => setTab(t)}
+            className={`flex items-center gap-2 rounded-full border-2 border-ink px-4 py-2 font-display text-lg font-bold ${active === t ? "bg-go" : "bg-surface"}`}
+          >
+            {label(t)}
+            {t !== "tag" && parts[t] === "fixed" && <span className="h-3 w-3 rounded-full border-2 border-ink bg-[#3da35d]" aria-label="fixed" />}
+          </button>
+        ))}
+      </div>
+      {cards
+        .filter((c) => c.part === active)
+        .map((c, i) => (
+          <div key={i} className="card flex flex-col gap-2 px-5 py-4" role="tabpanel">
+            <span className="text-xs font-bold tracking-widest text-muted">{c.title.toUpperCase()}</span>
+            {c.lines.map((l, j) => (
+              <p key={j} className={j === 0 && c.part !== "tag" ? "font-bold" : "text-lg"}>
+                <Arrows text={l} />
+              </p>
+            ))}
+            {c.part !== "tag" && parts[c.part] === "fixed" && <span className="self-start rounded-full bg-go px-3 py-1 text-sm font-extrabold">Fixed</span>}
+          </div>
+        ))}
     </div>
   );
 }
 
-function Wobbles({ n }: { n: number }) {
+/** "left to right" and "right to left" get a drawn arrow beside the words. */
+function Arrows({ text }: { text: string }) {
+  const parts = text.split(/(left to right|right to left)/);
   return (
-    <span className="flex items-center gap-1" aria-label={`${n} of ${MAX_WOBBLES} wobbles`}>
+    <>
+      {parts.map((p, i) =>
+        p === "left to right" || p === "right to left" ? (
+          <span key={i} className="whitespace-nowrap">
+            {p}
+            <svg viewBox="0 0 20 12" className="ml-1 inline h-3 w-5 align-middle" aria-hidden>
+              {p === "left to right" ? <path d="M1 6h17m-5-4 5 4-5 4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /> : <path d="M19 6H2m5-4-5 4 5 4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />}
+            </svg>
+          </span>
+        ) : (
+          <span key={i}>{p}</span>
+        )
+      )}
+    </>
+  );
+}
+
+function Wobbles({ n }: { n: number }) {
+  const left = MAX_WOBBLES - n;
+  return (
+    <span className="flex items-center gap-1" aria-label={`Wobbles left: ${left}`}>
       {Array.from({ length: MAX_WOBBLES }, (_, i) => (
         <span key={i} className={`h-4 w-4 rounded-full border-2 border-ink ${i < n ? "bg-alert" : "bg-surface"}`} />
       ))}
-      <span className="ml-1 text-sm font-bold">{n ? `${n} wobble${n === 1 ? "" : "s"}` : "steady"}</span>
+      <span className="ml-1 text-sm font-bold">Wobbles left: {left}</span>
     </span>
   );
 }
 
-/** The round's clock, from the server's time. At zero every phone asks the server to end the round. */
+/** The machine's clock, from the server's time. At zero every phone asks the server to end the machine. */
 function Clock({ endsAt, fire }: { endsAt: string | null; fire: () => unknown }) {
   const offset = useServerOffset();
   const [now, setNow] = useState(() => Date.now());
@@ -210,122 +327,151 @@ function Clock({ endsAt, fire }: { endsAt: string | null; fire: () => unknown })
 // Joshua, 6 Nov 19:20: a part must look, feel and move like the part it is.
 // Lamps are lamps with glass that glow; pictures are keys that press in; the
 // dial is a knob that turns to the number. The panel shakes on a wobble.
+// Nothing is judged until the Fixer presses Try it (CEO seat, change 3).
 
 const PANEL = "rounded-3xl border-4 border-ink bg-[#3b3f46] p-4 text-white shadow-[6px_6px_0_#111]";
 
-function Lamps({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: boolean; fixed: boolean; busy: boolean; onTry: (a: number[]) => Promise<boolean> }) {
+function TryBar({ ready, busy, onTry, onClear, dirty }: { ready: boolean; busy: boolean; onTry: () => void; onClear: () => void; dirty: boolean }) {
+  return (
+    <div className="flex items-center gap-3">
+      <button type="button" disabled={busy || !ready} onClick={onTry} className={`${secondary} h-12 w-auto flex-1 px-5 text-lg disabled:opacity-60`}>
+        Try it
+      </button>
+      <button type="button" disabled={busy || !dirty} onClick={onClear} className="h-12 rounded-2xl border-2 border-ink bg-surface px-4 font-bold disabled:opacity-40">
+        Clear
+      </button>
+    </div>
+  );
+}
+
+function Lamps({ view, hints, state, busy, onTry }: { view: MachineView; hints: boolean; state: "open" | "stage2" | "fixed"; busy: boolean; onTry: (a: number[]) => Promise<boolean> }) {
   const [pressed, setPressed] = useState<number[]>([]);
   const lamps = view.lamps ?? [];
-  async function press(i: number) {
+  const fixed = state === "fixed";
+  const small = lamps.length > 4;
+  function press(i: number) {
     if (fixed || busy || pressed.includes(i)) return;
-    const next = [...pressed, i];
-    setPressed(next);
-    if (next.length === lamps.length) {
-      await onTry(next);
-      setPressed([]);
-    }
+    setPressed([...pressed, i]);
+  }
+  async function tryIt() {
+    if (pressed.length !== lamps.length) return;
+    await onTry(pressed);
+    setPressed([]);
   }
   return (
-    <Part title={PART_NAMES.lamps} fixed={fixed} hint={fixed || !hints ? "" : "Press the lamps in the right order. Say which are lit and what colour they are."}>
-      <div className={`${PANEL} flex justify-around`}>
-        {lamps.map((l, i) => {
-          const n = pressed.indexOf(i);
-          return (
-            <button
-              key={i}
-              type="button"
-              disabled={fixed || busy}
-              onClick={() => press(i)}
-              aria-label={`${l.colour} lamp, ${l.lit ? "lit" : "off"}${n >= 0 ? ", pressed " + (n + 1) : ""}`}
-              className="machine-key flex flex-col items-center gap-1"
-              data-down={n >= 0}
-            >
-              <svg viewBox="0 0 64 80" className="h-20 w-16" aria-hidden>
-                <defs>
-                  <radialGradient id={`glow-${i}`} cx="50%" cy="40%" r="60%">
-                    <stop offset="0%" stopColor="#fff" stopOpacity="0.9" />
-                    <stop offset="40%" stopColor={LAMP_FILL[l.colour]} stopOpacity="1" />
-                    <stop offset="100%" stopColor={LAMP_FILL[l.colour]} stopOpacity="0.9" />
-                  </radialGradient>
-                </defs>
-                {l.lit && <circle cx="32" cy="30" r="30" fill={LAMP_FILL[l.colour]} opacity="0.35" className="machine-lamp-lit" />}
-                <rect x="14" y="52" width="36" height="14" rx="4" fill="#9a9ea6" stroke="#111" strokeWidth="2.5" />
-                <rect x="20" y="64" width="24" height="10" rx="3" fill="#6b6f77" stroke="#111" strokeWidth="2.5" />
-                <circle cx="32" cy="30" r="24" fill={l.lit ? `url(#glow-${i})` : "#2a2d33"} stroke="#111" strokeWidth="3" />
-                {!l.lit && <circle cx="32" cy="30" r="18" fill={LAMP_FILL[l.colour]} opacity="0.25" />}
-                <ellipse cx="24" cy="20" rx="7" ry="4" fill="#fff" opacity={l.lit ? 0.7 : 0.15} />
-                {n >= 0 && (
-                  <>
-                    <circle cx="32" cy="30" r="12" fill="#111" />
-                    <text x="32" y="36" textAnchor="middle" fontSize="16" fontWeight="800" fill="#fff" fontFamily="inherit">
-                      {n + 1}
-                    </text>
-                  </>
-                )}
-              </svg>
-              <span className="text-xs font-bold">{l.colour}</span>
-              <span className={`text-xs ${l.lit ? "text-go" : "text-white/60"}`}>{l.lit ? "lit" : "off"}</span>
-            </button>
-          );
-        })}
+    <Part title={PART_NAMES.lamps} fixed={fixed} hint={fixed || !hints ? "" : "Press the lamps in the order your Helpers say."}>
+      {state === "stage2" && <p className="text-sm font-bold">Stage two: the lamps have changed. Go again.</p>}
+      <div className={`${PANEL} flex justify-around ${small ? "gap-0 px-2" : ""}`}>
+        {lamps.map((l, i) => (
+          <LampButton key={i} lamp={l} i={i} n={pressed.indexOf(i)} small={small} disabled={fixed || busy} onPress={() => press(i)} />
+        ))}
       </div>
-      {!fixed && pressed.length > 0 && (
-        <button type="button" onClick={() => setPressed([])} className="self-start text-sm font-bold text-pick underline">
-          Start again
-        </button>
-      )}
+      {!fixed && <TryBar ready={pressed.length === lamps.length} dirty={pressed.length > 0} busy={busy} onTry={tryIt} onClear={() => setPressed([])} />}
     </Part>
+  );
+}
+
+function LampButton({ lamp: l, i, n, small, disabled, onPress }: { lamp: Lamp; i: number; n: number; small: boolean; disabled: boolean; onPress: () => void }) {
+  const blink = l.lit && l.blink === true;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onPress}
+      aria-label={`${l.colour} lamp, ${blink ? "blinking" : l.lit ? "lit" : "off"}${n >= 0 ? ", pressed " + (n + 1) : ""}`}
+      className="machine-key flex flex-col items-center gap-1"
+      data-down={n >= 0}
+    >
+      <svg viewBox="0 0 64 80" className={small ? "h-14 w-11" : "h-20 w-16"} aria-hidden>
+        <defs>
+          <radialGradient id={`glow-${i}`} cx="50%" cy="40%" r="60%">
+            <stop offset="0%" stopColor="#fff" stopOpacity="0.9" />
+            <stop offset="40%" stopColor={LAMP_FILL[l.colour]} stopOpacity="1" />
+            <stop offset="100%" stopColor={LAMP_FILL[l.colour]} stopOpacity="0.9" />
+          </radialGradient>
+        </defs>
+        {l.lit && <circle cx="32" cy="30" r="30" fill={LAMP_FILL[l.colour]} opacity="0.35" className={blink ? "machine-lamp-blink" : "machine-lamp-lit"} />}
+        <rect x="14" y="52" width="36" height="14" rx="4" fill="#9a9ea6" stroke="#111" strokeWidth="2.5" />
+        <rect x="20" y="64" width="24" height="10" rx="3" fill="#6b6f77" stroke="#111" strokeWidth="2.5" />
+        <circle cx="32" cy="30" r="24" fill={l.lit ? `url(#glow-${i})` : "#2a2d33"} stroke="#111" strokeWidth="3" className={blink ? "machine-lamp-blink" : undefined} />
+        {!l.lit && <circle cx="32" cy="30" r="18" fill={LAMP_FILL[l.colour]} opacity="0.25" />}
+        {blink && <circle cx="32" cy="30" r="27.5" fill="none" stroke="#f7f3e8" strokeWidth="2" strokeDasharray="5 4" />}
+        <ellipse cx="24" cy="20" rx="7" ry="4" fill="#fff" opacity={l.lit ? 0.7 : 0.15} />
+        {n >= 0 && (
+          <>
+            <circle cx="32" cy="30" r="12" fill="#111" />
+            <text x="32" y="36" textAnchor="middle" fontSize="16" fontWeight="800" fill="#fff" fontFamily="inherit">
+              {n + 1}
+            </text>
+          </>
+        )}
+      </svg>
+      <span className="text-xs font-bold">{l.colour}</span>
+      <span className={`text-xs ${l.lit ? "text-go" : "text-white/60"}`}>{blink ? "blinking" : l.lit ? "lit" : "off"}</span>
+    </button>
   );
 }
 
 function PictureRow({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: boolean; fixed: boolean; busy: boolean; onTry: (a: Picture[]) => Promise<boolean> }) {
   const [tapped, setTapped] = useState<Picture[]>([]);
-  const pics = view.pictures ?? [];
-  async function tap(p: Picture) {
+  const keys = view.pictures ?? [];
+  const small = keys.length > 4;
+  function tap(p: Picture) {
     if (fixed || busy || tapped.includes(p)) return;
-    const next = [...tapped, p];
-    setTapped(next);
-    if (next.length === pics.length) {
-      await onTry(next);
-      setTapped([]);
-    }
+    setTapped([...tapped, p]);
+  }
+  async function tryIt() {
+    if (tapped.length !== keys.length) return;
+    await onTry(tapped);
+    setTapped([]);
   }
   return (
-    <Part title={PART_NAMES.pictures} fixed={fixed} hint={fixed || !hints ? "" : "Press the picture keys in the right order. Say what pictures you have."}>
-      <div className={`${PANEL} flex justify-around`}>
-        {pics.map((p) => {
-          const n = tapped.indexOf(p);
+    <Part title={PART_NAMES.pictures} fixed={fixed} hint={fixed || !hints ? "" : "Tap the pictures in the order your Helpers say."}>
+      <div className={`${PANEL} flex justify-around ${small ? "px-2" : ""}`}>
+        {keys.map((k) => {
+          const n = tapped.indexOf(k.picture);
           return (
-            <button key={p} type="button" disabled={fixed || busy} onClick={() => tap(p)} aria-label={`${p}${n >= 0 ? ", pressed " + (n + 1) : ""}`} className="flex flex-col items-center gap-2">
-              <span className="machine-key relative flex h-16 w-16 items-center justify-center rounded-xl border-[3px] border-ink bg-[#f7f3e8] shadow-[0_5px_0_#111]" data-down={n >= 0}>
-                <Icon p={p} />
+            <button
+              key={k.picture}
+              type="button"
+              disabled={fixed || busy}
+              onClick={() => tap(k.picture)}
+              aria-label={`${k.colour ? k.colour + " " : ""}${k.picture}${k.flipped ? ", upside down" : ""}${n >= 0 ? ", pressed " + (n + 1) : ""}`}
+              className="flex flex-col items-center gap-2"
+            >
+              <span
+                className={`machine-key relative flex items-center justify-center rounded-xl border-[3px] border-ink shadow-[0_5px_0_#111] ${small ? "h-14 w-14" : "h-16 w-16"}`}
+                style={{ background: k.colour ? KEY_FILL[k.colour] : "#f7f3e8" }}
+                data-down={n >= 0}
+              >
+                <span style={k.flipped ? { transform: "rotate(180deg)", display: "inline-flex" } : { display: "inline-flex" }}>
+                  <Icon p={k.picture} />
+                </span>
                 {n >= 0 && <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-ink bg-go text-xs font-extrabold text-ink">{n + 1}</span>}
               </span>
-              <span className="text-xs font-bold">{p}</span>
+              <span className="text-xs font-bold">{k.picture}</span>
             </button>
           );
         })}
       </div>
-      {!fixed && tapped.length > 0 && (
-        <button type="button" onClick={() => setTapped([])} className="self-start text-sm font-bold text-pick underline">
-          Start again
-        </button>
-      )}
+      {!fixed && <TryBar ready={tapped.length === keys.length} dirty={tapped.length > 0} busy={busy} onTry={tryIt} onClear={() => setTapped([])} />}
     </Part>
   );
 }
 
 /**
  * A knob with six positions, labelled with numbers or symbols. The combination
- * has one to three turns: the patterns show in a row, the Fixer turns the knob
- * to each in order and sets it, and the whole sequence is tried at once.
+ * has one to three turns: each turn shows what it is read from (a pattern, the
+ * lit lamps, the serial number), the Fixer turns the knob to each in order and
+ * sets it, then tries the whole sequence at once.
  */
 function Dial({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: boolean; fixed: boolean; busy: boolean; onTry: (a: number[]) => Promise<boolean> }) {
   const [setting, setSetting] = useState<number | null>(null);
   const [done, setDone] = useState<number[]>([]);
-  const dial = view.dial ?? { patterns: ["dots"] as Pattern[], labels: "numbers" as const };
-  const turns = dial.patterns.length;
+  const dial = view.dial ?? { turns: [{ source: "pattern" as const, pattern: "dots" as Pattern }], labels: "numbers" as const };
+  const turns = dial.turns.length;
   const turn = done.length; // 0-based index of the turn being set
+  const allSet = done.length === turns;
   const shown = setting ?? done[done.length - 1] ?? 1;
   const angle = (shown - 1) * 60;
   const label = (pos: number) => (dial.labels === "symbols" && dial.symbols ? dial.symbols[pos - 1] : String(pos));
@@ -333,32 +479,31 @@ function Dial({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: b
     setSetting(null);
     setDone([]);
   };
-  async function set() {
-    if (setting === null) return;
-    const next = [...done, setting];
-    if (next.length < turns) {
-      setDone(next);
-      setSetting(null);
-      return;
-    }
-    await onTry(next);
+  function set() {
+    if (setting === null || allSet) return;
+    setDone([...done, setting]);
+    setSetting(null);
+  }
+  async function tryIt() {
+    if (!allSet) return;
+    await onTry(done);
     reset();
   }
-  const hint = fixed || !hints ? "" : turns === 1 ? `The dial shows ${dial.patterns[0]}. Turn it to the right place, then set it.` : `A ${turns}-turn combination. Turn to each pattern's place in order, setting each one.`;
+  const hint = fixed || !hints ? "" : "Turn the dial where your Helpers say.";
   return (
     <Part title={PART_NAMES.dial} fixed={fixed} hint={hint}>
       <div className={`${PANEL} flex flex-col items-center gap-3`}>
         <div className="flex items-center gap-3">
-          {dial.patterns.map((p, i) => (
+          {dial.turns.map((t, i) => (
             <div key={i} className="flex flex-col items-center gap-1">
-              <span className="text-[10px] font-bold tracking-widest text-white/70">{turns === 1 ? "PATTERN" : `TURN ${i + 1}`}</span>
+              <span className="text-[10px] font-bold tracking-widest text-white/70">{turns === 1 ? "PATTERN" : `${ORDINAL[i].toUpperCase()} TURN`}</span>
               <span
-                className={`flex h-14 w-14 items-center justify-center rounded-xl border-[3px] bg-[#f7f3e8] ${i === turn && !fixed ? "border-go shadow-[0_0_0_3px_#ffd23f]" : i < turn ? "border-[#3da35d] opacity-70" : "border-ink"}`}
-                aria-label={`turn ${i + 1}: ${p}${i < turn ? ", set" : ""}`}
+                className={`flex h-14 w-14 items-center justify-center rounded-xl border-[3px] bg-[#f7f3e8] ${i === turn && !fixed && !allSet ? "border-go shadow-[0_0_0_3px_#ffd23f]" : i < turn ? "border-[#3da35d] opacity-70" : "border-ink"}`}
+                aria-label={`${ORDINAL[i]} turn: ${t.source === "pattern" ? t.pattern : t.source === "lamps" ? "the lamps" : "the serial number"}${i < turn ? ", set" : ""}`}
               >
-                <PatternIcon p={p} />
+                {t.source !== "pattern" ? <SourceIcon source={t.source} /> : t.pattern ? <PatternIcon p={t.pattern} /> : null}
               </span>
-              <span className="text-xs font-bold">{p}</span>
+              <span className="text-xs font-bold">{t.source === "pattern" ? t.pattern : t.source === "lamps" ? "lamps" : "serial"}</span>
             </div>
           ))}
           {dial.light && (
@@ -397,7 +542,7 @@ function Dial({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: b
               <button
                 key={n}
                 type="button"
-                disabled={fixed || busy}
+                disabled={fixed || busy || allSet}
                 aria-pressed={setting === n}
                 aria-label={`turn to ${label(n)}`}
                 onClick={() => setSetting(n)}
@@ -409,20 +554,17 @@ function Dial({ view, hints, fixed, busy, onTry }: { view: MachineView; hints: b
             );
           })}
         </div>
-        {dial.labels === "symbols" && dial.symbols && (
-          <p className="text-center text-xs text-white/80">Round the knob: {dial.symbols.join(", ")}.</p>
-        )}
+        {dial.labels === "symbols" && dial.symbols && <p className="text-center text-xs text-white/80">Round the knob: {dial.symbols.join(", ")}.</p>}
+        {done.length > 0 && <p className="text-center text-xs text-white/80">Set so far: {done.map((d) => label(d)).join(", ")}.</p>}
       </div>
       {!fixed && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button type="button" disabled={busy || setting === null} onClick={set} className={`${secondary} h-12 w-auto px-5 text-base disabled:opacity-60`}>
-            {setting === null ? (turns === 1 ? "Turn the dial first" : `Turn ${turn + 1} of ${turns}: turn the dial`) : turns === 1 ? `Set the dial to ${label(setting)}` : `Set turn ${turn + 1} of ${turns} to ${label(setting)}`}
-          </button>
-          {done.length > 0 && (
-            <button type="button" onClick={reset} className="text-sm font-bold text-pick underline">
-              Start the combination again
+        <div className="flex flex-col gap-2">
+          {!allSet && (
+            <button type="button" disabled={busy || setting === null} onClick={set} className={`${secondary} h-12 text-lg disabled:opacity-60`}>
+              {setting === null ? (turns === 1 ? "Turn the dial first" : `${ORDINAL[turn]} turn: turn the dial`) : turns === 1 ? `Set the dial to ${label(setting)}` : `${ORDINAL[turn]} turn: set it to ${label(setting)}`}
             </button>
           )}
+          <TryBar ready={allSet} dirty={done.length > 0 || setting !== null} busy={busy} onTry={tryIt} onClear={reset} />
         </div>
       )}
     </Part>
@@ -447,6 +589,31 @@ function Part({ title, fixed, hint, children }: { title: string; fixed: boolean;
       {hint && <p className="text-sm text-muted">{hint}</p>}
       {children}
     </div>
+  );
+}
+
+/** What a non-pattern turn of the dial is read from: the lamps, or the serial number. */
+function SourceIcon({ source }: { source: "lamps" | "serial" }) {
+  const c = "#1d1a14";
+  if (source === "lamps") {
+    return (
+      <svg viewBox="0 0 40 40" className="h-10 w-10" aria-hidden>
+        {[10, 20, 30].map((x) => (
+          <g key={x}>
+            <circle cx={x} cy="16" r="6" fill={x === 20 ? "#2a2d33" : "#f4c542"} stroke={c} strokeWidth="2" />
+            <rect x={x - 4} y="23" width="8" height="5" rx="1" fill="#9a9ea6" stroke={c} strokeWidth="1.5" />
+          </g>
+        ))}
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 40 40" className="h-10 w-10" aria-hidden>
+      <rect x="4" y="12" width="32" height="16" rx="3" fill="#f7f3e8" stroke={c} strokeWidth="2" />
+      <text x="20" y="24" textAnchor="middle" fontSize="11" fontWeight="800" fill={c} fontFamily="inherit">
+        No.
+      </text>
+    </svg>
   );
 }
 
@@ -621,19 +788,21 @@ export function MachineResults({ state: s, me, hostId, act }: { state: MachinePu
     await act(type, payload);
     setBusy(false);
   };
+  const machines = s.settings.rounds;
+  const master = s.allClean && s.tally.fixed === machines && machines > 0;
   return (
     <section className="flex flex-1 flex-col gap-4">
-      <h2 className="font-display text-4xl font-bold leading-tight text-ink">{s.score === 0 ? "The machine won this time" : "Good work, team"}</h2>
+      <h2 className="font-display text-4xl font-bold leading-tight text-ink">{master ? "Master mechanics!" : "Team score"}</h2>
       <div className="card flex items-center justify-between px-5 py-4">
         <span className="font-bold">Team score</span>
         <span className="font-display text-4xl font-bold">{s.score}</span>
       </div>
       <p className="text-muted">
-        {s.settings.rounds} {s.settings.rounds === 1 ? "round" : "rounds"}. Everyone on the team gets {s.score} {s.score === 1 ? "point" : "points"}.
+        {s.tally.fixed} fixed, {s.tally.popped} popped. Everyone on the team gets {s.score} {s.score === 1 ? "point" : "points"}.
       </p>
       {me === hostId ? (
         <div className="mt-auto flex flex-col gap-3">
-          <button type="button" disabled={busy} onClick={() => go("start_game", { gameId: "machine", options: { pace: s.settings.pace, length: s.settings.length, level: s.settings.level } })} className={primary}>
+          <button type="button" disabled={busy} onClick={() => go("start_game", { gameId: "machine", options: { pace: s.settings.pace, length: s.settings.length, level: s.settings.level, fixedOnce: s.fixedOnce } })} className={primary}>
             Play again
           </button>
           <button type="button" disabled={busy} onClick={() => go("back_to_lobby")} className={secondary}>
@@ -652,3 +821,4 @@ export interface MachineOptions {
   length: MachineLength;
   level: MachineLevel;
 }
+

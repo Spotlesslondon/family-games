@@ -130,6 +130,14 @@ body {
     92% { opacity: 1; }
     95% { opacity: 0.75; }
   }
+  /* A blinking lamp pulses slowly, well under three flashes a second. */
+  .machine-lamp-blink {
+    animation: machine-blink 1.2s ease-in-out infinite;
+  }
+  @keyframes machine-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.15; }
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .machine-knob { transition: none; }
