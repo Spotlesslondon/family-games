@@ -24,6 +24,8 @@ import { NervePlay, NerveResults, type NerveOptions } from "./nerve-play";
 import { MachinePlay, MachineResults, type MachineOptions } from "./machine-play";
 import { LEVEL_NAMES, type MachineMine, type MachinePublic } from "@/games/machine/shape";
 import { DetectivePlay, DetectiveResults, type DetectiveOptions } from "./detective-play";
+import { MurderPlay, MurderResults, type MurderOptions } from "./murder-play";
+import type { Booklet, MurderPublic } from "@/games/murder/shape";
 import { LEVEL_NAMES as DETECTIVE_LEVEL_NAMES, type DetectiveMine, type DetectivePublic } from "@/games/detective/shape";
 import type { NervePublic } from "@/games/nerve/shape";
 import { QUIZ_TOPICS, type QuizLength, type QuizMine, type QuizPublic, type QuizTopic } from "@/games/quiz/shape";
@@ -111,7 +113,8 @@ export function Lobby() {
   // Mr White settings, for the host: Mr White on and typed clues by default.
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
-  const [game, setGame] = useState<"mr-white" | "quiz" | "nerve" | "machine" | "detective">("mr-white");
+  const [game, setGame] = useState<"mr-white" | "quiz" | "nerve" | "machine" | "detective" | "murder">("mr-white");
+  const [murderOpts, setMurderOpts] = useState<MurderOptions>({ length: "short" });
   const [detectiveOpts, setDetectiveOpts] = useState<DetectiveOptions>({ level: 1, length: "short" });
   const [machineOpts, setMachineOpts] = useState<MachineOptions>({ pace: "relaxed", length: "normal", level: 1 });
   const [nerveOpts, setNerveOpts] = useState<NerveOptions>({ pace: "normal", length: "normal", level: "normal" });
@@ -384,11 +387,12 @@ export function Lobby() {
   const meSeat = seats.find((s) => s.id === session.member.id);
 
   // A game is running, or has just finished: the game's own screens take over.
-  if ((room.current_game === "mr-white" || room.current_game === "quiz" || room.current_game === "nerve" || room.current_game === "machine" || room.current_game === "detective") && room.phase !== "lobby") {
+  if ((room.current_game === "mr-white" || room.current_game === "quiz" || room.current_game === "nerve" || room.current_game === "machine" || room.current_game === "detective" || room.current_game === "murder") && room.phase !== "lobby") {
     const isQuiz = room.current_game === "quiz";
     const isNerve = room.current_game === "nerve";
     const isMachine = room.current_game === "machine";
     const isDetective = room.current_game === "detective";
+    const isMurder = room.current_game === "murder";
     // While the host's phone is away, the stand-in gets the host's buttons
     // (the server checks the same rule, room engine standIn).
     // Only once the host has been away a whole minute, the same rule the server applies.
@@ -424,7 +428,7 @@ export function Lobby() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : isMachine ? "Fix the Machine" : isDetective ? "Detective" : "Mr White"}</h1>
+            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : isMachine ? "Fix the Machine" : isDetective ? "Detective" : isMurder ? "Murder at Ashworth Hall" : "Mr White"}</h1>
             {hostEnd}
           </div>
           <div className="flex items-center gap-3">
@@ -434,7 +438,21 @@ export function Lobby() {
         </div>
         {standInLine}
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
-        {isDetective ? (
+        {isMurder ? (
+          room.phase === "results" ? (
+            <MurderResults state={room.state as unknown as MurderPublic} me={session.member.id} hostId={controlId} people={people} act={act} />
+          ) : (
+            <MurderPlay
+              phase={room.phase}
+              state={room.state as unknown as MurderPublic}
+              mine={(mine && "guest" in mine ? (mine as unknown as Booklet & { vote?: string }) : null)}
+              me={session.member.id}
+              hostId={controlId}
+              people={people}
+              act={act}
+            />
+          )
+        ) : isDetective ? (
           room.phase === "results" ? (
             <DetectiveResults state={room.state as unknown as DetectivePublic} me={session.member.id} hostId={controlId} people={people} act={act} />
           ) : (
@@ -626,6 +644,7 @@ export function Lobby() {
                 ["nerve", "Nerve"],
                 ["machine", "Fix the Machine"],
                 ["detective", "Detective"],
+                ["murder", "Murder Mystery"],
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
@@ -699,6 +718,18 @@ export function Lobby() {
                     <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{(names as Record<string, string>)[machineOpts[key]]}</span>
                   </button>
                 ))}
+              </div>
+            ) : game === "murder" ? (
+              <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Murder Mystery settings">
+                <p className="px-3 text-sm text-muted">A dinner party, a body in the library, and one of you did it. Everyone plays a guest; the murderer knows. 4 to 8 players.</p>
+                <button
+                  type="button"
+                  onClick={() => setMurderOpts((o) => ({ ...o, length: o.length === "short" ? "normal" : "short" }))}
+                  className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+                >
+                  <span>Length</span>
+                  <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{murderOpts.length === "short" ? "1 case" : "3 cases"}</span>
+                </button>
               </div>
             ) : game === "detective" ? (
               <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Detective settings">
@@ -789,10 +820,12 @@ export function Lobby() {
             )}
             <button
               type="button"
-              disabled={here < (game === "mr-white" ? 3 : 2)}
+              disabled={here < (game === "murder" ? 4 : game === "mr-white" ? 3 : 2) || (game === "murder" && here > 8)}
               onClick={async () => {
                 const out =
-                  game === "detective"
+                  game === "murder"
+                    ? await act("start_game", { gameId: "murder", options: { ...murderOpts } })
+                    : game === "detective"
                     ? await act("start_game", { gameId: "detective", options: { ...detectiveOpts } })
                     : game === "machine"
                     ? await act("start_game", { gameId: "machine", options: { ...machineOpts } })
@@ -805,7 +838,13 @@ export function Lobby() {
               }}
               className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
-              {game === "detective"
+              {game === "murder"
+                ? here < 4
+                  ? "Murder Mystery needs 4 players"
+                  : here > 8
+                  ? "Murder Mystery is for up to 8"
+                  : "Play Murder Mystery"
+                : game === "detective"
                 ? here < 2
                   ? "Detective needs 2 players"
                   : "Play Detective"

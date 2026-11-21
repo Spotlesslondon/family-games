@@ -5,3 +5,4 @@ import "./quiz";
 import "./nerve";
 import "./machine";
 import "./detective";
+import "./murder";

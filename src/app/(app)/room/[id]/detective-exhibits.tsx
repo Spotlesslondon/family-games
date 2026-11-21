@@ -50,10 +50,19 @@ const LOOKS: Record<string, Look> = {
   "Cousin Kit": { skin: "#f2cfb0", hair: "#d9a441", style: "short", child: true },
   "Auntie Jen": { skin: "#8d5a3b", hair: "#1e1410", style: "pony" },
   "Uncle Raj": { skin: "#a8714f", hair: "#1b1512", style: "short", glasses: true },
+  // Murder at Ashworth Hall's guests.
+  "Major Ashby": { skin: "#eab493", hair: "#bdbdbd", style: "short", beard: true },
+  "Dr Penrose": { skin: "#f0c7a6", hair: "#3b2a1e", style: "bun", glasses: true },
+  "Lady Vane": { skin: "#f3cdb2", hair: "#c9a050", style: "long" },
+  "Chef Rossi": { skin: "#d6a07a", hair: "#2a1c14", style: "curly" },
+  "Miss Lark": { skin: "#9a6646", hair: "#140e0a", style: "pony", glasses: true },
+  "Mr Finch": { skin: "#e2ae8a", hair: "#6b4a2a", style: "short" },
+  "Professor Quill": { skin: "#f1c9ab", hair: "#e4e4e4", style: "bald", glasses: true, beard: true },
+  "Madame Orla": { skin: "#b57a55", hair: "#5a1e2e", style: "long" },
 };
 
 /** A person standing, about 120 units tall (children 92). Facing the camera, or back turned. */
-function Person({ name, colour, clothes, x, y, scale = 1, back = false }: { name: string; colour: string; clothes: string; x: number; y: number; scale?: number; back?: boolean }) {
+export function Person({ name, colour, clothes, x, y, scale = 1, back = false }: { name: string; colour: string; clothes: string; x: number; y: number; scale?: number; back?: boolean }) {
   const look = LOOKS[name] ?? { skin: "#e0b08a", hair: "#3a2a1a", style: "short" as const };
   const k = scale * (look.child ? 0.78 : 1);
   const c = CLOTH[colour] ?? colour;
