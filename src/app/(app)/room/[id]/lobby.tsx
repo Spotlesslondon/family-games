@@ -23,6 +23,8 @@ import { QuizPlay, QuizResults } from "./quiz-play";
 import { NervePlay, NerveResults, type NerveOptions } from "./nerve-play";
 import { MachinePlay, MachineResults, type MachineOptions } from "./machine-play";
 import { LEVEL_NAMES, type MachineMine, type MachinePublic } from "@/games/machine/shape";
+import { DetectivePlay, DetectiveResults, type DetectiveOptions } from "./detective-play";
+import { LEVEL_NAMES as DETECTIVE_LEVEL_NAMES, type DetectiveMine, type DetectivePublic } from "@/games/detective/shape";
 import type { NervePublic } from "@/games/nerve/shape";
 import { QUIZ_TOPICS, type QuizLength, type QuizMine, type QuizPublic, type QuizTopic } from "@/games/quiz/shape";
 import { AvatarPick } from "./avatar-pick";
@@ -109,7 +111,8 @@ export function Lobby() {
   // Mr White settings, for the host: Mr White on and typed clues by default.
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
-  const [game, setGame] = useState<"mr-white" | "quiz" | "nerve" | "machine">("mr-white");
+  const [game, setGame] = useState<"mr-white" | "quiz" | "nerve" | "machine" | "detective">("mr-white");
+  const [detectiveOpts, setDetectiveOpts] = useState<DetectiveOptions>({ level: 1, length: "short" });
   const [machineOpts, setMachineOpts] = useState<MachineOptions>({ pace: "relaxed", length: "normal", level: 1 });
   const [nerveOpts, setNerveOpts] = useState<NerveOptions>({ pace: "normal", length: "normal", level: "normal" });
   const [quizLength, setQuizLength] = useState<QuizLength>("normal");
@@ -381,10 +384,11 @@ export function Lobby() {
   const meSeat = seats.find((s) => s.id === session.member.id);
 
   // A game is running, or has just finished: the game's own screens take over.
-  if ((room.current_game === "mr-white" || room.current_game === "quiz" || room.current_game === "nerve" || room.current_game === "machine") && room.phase !== "lobby") {
+  if ((room.current_game === "mr-white" || room.current_game === "quiz" || room.current_game === "nerve" || room.current_game === "machine" || room.current_game === "detective") && room.phase !== "lobby") {
     const isQuiz = room.current_game === "quiz";
     const isNerve = room.current_game === "nerve";
     const isMachine = room.current_game === "machine";
+    const isDetective = room.current_game === "detective";
     // While the host's phone is away, the stand-in gets the host's buttons
     // (the server checks the same rule, room engine standIn).
     // Only once the host has been away a whole minute, the same rule the server applies.
@@ -420,7 +424,7 @@ export function Lobby() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : isMachine ? "Fix the Machine" : "Mr White"}</h1>
+            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : isMachine ? "Fix the Machine" : isDetective ? "Detective" : "Mr White"}</h1>
             {hostEnd}
           </div>
           <div className="flex items-center gap-3">
@@ -430,7 +434,21 @@ export function Lobby() {
         </div>
         {standInLine}
         {actionError && <p role="alert" className="text-center font-bold text-alert">{actionError}</p>}
-        {isMachine ? (
+        {isDetective ? (
+          room.phase === "results" ? (
+            <DetectiveResults state={room.state as unknown as DetectivePublic} me={session.member.id} hostId={controlId} people={people} act={act} />
+          ) : (
+            <DetectivePlay
+              phase={room.phase}
+              state={room.state as unknown as DetectivePublic}
+              mine={(mine && "evidence" in mine ? (mine as unknown as DetectiveMine) : null)}
+              me={session.member.id}
+              hostId={controlId}
+              people={people}
+              act={act}
+            />
+          )
+        ) : isMachine ? (
           room.phase === "results" ? (
             <MachineResults state={room.state as unknown as MachinePublic} me={session.member.id} hostId={controlId} people={people} act={act} />
           ) : (
@@ -607,6 +625,7 @@ export function Lobby() {
                 ["quiz", "The quiz"],
                 ["nerve", "Nerve"],
                 ["machine", "Fix the Machine"],
+                ["detective", "Detective"],
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
@@ -681,6 +700,35 @@ export function Lobby() {
                   </button>
                 ))}
               </div>
+            ) : game === "detective" ? (
+              <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Detective settings">
+                <p className="px-3 text-sm text-muted">Something has gone missing. Each of you holds different evidence. Put it together and name who did it. 2 or more players.</p>
+                <div className="flex flex-col gap-2 px-3">
+                  <span className="font-bold">Level</span>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="Level">
+                    {([1, 2] as const).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        aria-pressed={detectiveOpts.level === n}
+                        onClick={() => setDetectiveOpts((o) => ({ ...o, level: n }))}
+                        className={`h-11 w-11 rounded-full border-2 border-ink font-display text-lg font-bold ${detectiveOpts.level === n ? "bg-go" : "bg-surface"}`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-sm text-muted">{DETECTIVE_LEVEL_NAMES[detectiveOpts.level]}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetectiveOpts((o) => ({ ...o, length: o.length === "short" ? "normal" : "short" }))}
+                  className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
+                >
+                  <span>Length</span>
+                  <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{detectiveOpts.length === "short" ? "1 case" : "3 cases"}</span>
+                </button>
+              </div>
             ) : game === "nerve" ? (
               <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Nerve settings">
                 <p className="px-3 text-sm text-muted">Hold the button while the pot climbs. Let go to bank it. Hold too long and it busts.</p>
@@ -744,7 +792,9 @@ export function Lobby() {
               disabled={here < (game === "mr-white" ? 3 : 2)}
               onClick={async () => {
                 const out =
-                  game === "machine"
+                  game === "detective"
+                    ? await act("start_game", { gameId: "detective", options: { ...detectiveOpts } })
+                    : game === "machine"
                     ? await act("start_game", { gameId: "machine", options: { ...machineOpts } })
                     : game === "nerve"
                     ? await act("start_game", { gameId: "nerve", options: { ...nerveOpts } })
@@ -755,7 +805,11 @@ export function Lobby() {
               }}
               className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
-              {game === "machine"
+              {game === "detective"
+                ? here < 2
+                  ? "Detective needs 2 players"
+                  : "Play Detective"
+                : game === "machine"
                 ? here < 2
                   ? "Fix the Machine needs 2 players"
                   : "Fix the Machine"
