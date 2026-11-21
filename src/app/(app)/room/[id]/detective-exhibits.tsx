@@ -73,6 +73,10 @@ function Person({ name, colour, clothes, x, y, scale = 1, back = false }: { name
           <path d="M22 -50 Q24 -88 14 -94 L3 -94 L5 -50 Z" fill={c} />
         </>
       )}
+      {/* shade on the side away from the light, and a fold at the waist */}
+      <path d="M2 -94 L14 -94 Q24 -88 22 -50 L4 -50 Z" fill="#000" opacity={0.16} />
+      <path d="M-20 -60 Q0 -55 20 -60" stroke="#000" strokeOpacity={0.18} strokeWidth={2} fill="none" />
+      <rect x={2} y={-48} width={11} height={46} rx={4} fill="#000" opacity={0.18} />
       {/* arms */}
       <rect x={-30} y={-92} width={9} height={40} rx={4.5} fill={clothes === "jumper" || clothes === "cardigan" ? c : top} />
       <rect x={21} y={-92} width={9} height={40} rx={4.5} fill={clothes === "jumper" || clothes === "cardigan" ? c : top} />
@@ -81,6 +85,9 @@ function Person({ name, colour, clothes, x, y, scale = 1, back = false }: { name
       {/* head */}
       <rect x={-5} y={-102} width={10} height={9} fill={look.skin} />
       <circle cx={0} cy={-114} r={15} fill={look.skin} />
+      <path d="M3 -128 A15 15 0 0 1 3 -100 A13 15 0 0 0 3 -128Z" fill="#000" opacity={0.12} />
+      {/* from behind, the back of the head is hair */}
+      {back && look.style !== "bald" && <circle cx={0} cy={-115} r={15.5} fill={look.hair} />}
       <Hair look={look} back={back} />
       {!back && (
         <>
@@ -152,27 +159,68 @@ function Hair({ look, back }: { look: Look; back: boolean }) {
 
 // ---- CCTV ------------------------------------------------------------------
 
-/** Camera grain and a dark edge, shared by every still. */
+/** Camera softness, grain, scan lines, a dark edge and lens glare, shared by every still. */
 function CameraFilters({ id }: { id: string }) {
   return (
     <defs>
       <filter id={`grain-${id}`} x="0" y="0" width="100%" height="100%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves={2} seed={7} result="n" />
+        <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves={2} seed={11} result="n" />
         <feColorMatrix in="n" type="saturate" values="0" />
         <feComponentTransfer>
-          <feFuncA type="table" tableValues="0 0.16" />
+          <feFuncA type="table" tableValues="0 0.2" />
         </feComponentTransfer>
       </filter>
-      <radialGradient id={`vig-${id}`} cx="50%" cy="50%" r="70%">
-        <stop offset="60%" stopColor="#000" stopOpacity="0" />
-        <stop offset="100%" stopColor="#000" stopOpacity="0.4" />
-      </radialGradient>
-      <pattern id={`scan-${id}`} width="4" height="4" patternUnits="userSpaceOnUse">
-        <rect width="4" height="1" fill="#000" opacity="0.12" />
-      </pattern>
-      <filter id={`wash-${id}`}>
-        <feColorMatrix type="saturate" values="0.95" />
+      <filter id={`soft-${id}`}>
+        <feGaussianBlur stdDeviation="0.6" />
       </filter>
+      <filter id={`shadow-${id}`} x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="6" />
+      </filter>
+      <filter id={`wall-${id}`} x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035 0.6" numOctaves={3} seed={3} result="t" />
+        <feColorMatrix in="t" type="matrix" values="0 0 0 0 0.45  0 0 0 0 0.4  0 0 0 0 0.33  0 0 0 0.09 0" />
+        <feComposite in2="SourceGraphic" operator="in" />
+      </filter>
+      <filter id={`wood-${id}`} x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.45" numOctaves={3} seed={5} result="t" />
+        <feColorMatrix in="t" type="matrix" values="0 0 0 0 0.2  0 0 0 0 0.12  0 0 0 0 0.05  0 0 0 0.35 0" />
+        <feComposite in2="SourceGraphic" operator="in" />
+      </filter>
+      <filter id={`wash-${id}`}>
+        <feColorMatrix type="matrix" values="0.92 0.06 0.02 0 0.02  0.04 0.94 0.02 0 0.03  0.03 0.06 0.86 0 0.04  0 0 0 1 0" />
+      </filter>
+      <radialGradient id={`vig-${id}`} cx="50%" cy="48%" r="72%">
+        <stop offset="55%" stopColor="#000" stopOpacity="0" />
+        <stop offset="100%" stopColor="#000" stopOpacity="0.6" />
+      </radialGradient>
+      <radialGradient id={`pool-${id}`} cx="50%" cy="10%" r="90%">
+        <stop offset="0%" stopColor="#fff7dc" stopOpacity="0.55" />
+        <stop offset="60%" stopColor="#fff7dc" stopOpacity="0.08" />
+        <stop offset="100%" stopColor="#000" stopOpacity="0.15" />
+      </radialGradient>
+      <radialGradient id={`glare-${id}`} cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#fffbea" stopOpacity="0.9" />
+        <stop offset="100%" stopColor="#fffbea" stopOpacity="0" />
+      </radialGradient>
+      <linearGradient id={`lwall-${id}`} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stopColor="#b9b09d" />
+        <stop offset="1" stopColor="#d6cfbf" />
+      </linearGradient>
+      <linearGradient id={`rwall-${id}`} x1="1" y1="0" x2="0" y2="0">
+        <stop offset="0" stopColor="#b3aa96" />
+        <stop offset="1" stopColor="#d2cab9" />
+      </linearGradient>
+      <linearGradient id={`floor-${id}`} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#8c6d4f" />
+        <stop offset="1" stopColor="#5e4632" />
+      </linearGradient>
+      <linearGradient id={`door-${id}`} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stopColor="#6e4f33" />
+        <stop offset="1" stopColor="#8a6644" />
+      </linearGradient>
+      <pattern id={`scan-${id}`} width="3" height="3" patternUnits="userSpaceOnUse">
+        <rect width="3" height="1" fill="#000" opacity="0.1" />
+      </pattern>
     </defs>
   );
 }
@@ -186,61 +234,154 @@ const SPOT: Record<CctvSpot, { x: number; y: number; s: number }> = {
   stairs: { x: 405, y: 236, s: 0.72 },
 };
 
+/** The hall, furnished and lit, as the camera in the corner sees it. */
+function Hall({ id, room, open }: { id: string; room: string; open: CctvSpot }) {
+  return (
+    <g>
+      <rect width="640" height="360" fill="#2b2620" />
+      {/* ceiling */}
+      <polygon points="0,0 230,95 410,95 640,0" fill="#e2dccd" />
+      <polygon points="0,0 230,95 410,95 640,0" fill="#000" opacity="0.08" />
+      {/* side walls with texture, back wall */}
+      <polygon points="0,0 230,95 230,240 0,360" fill={`url(#lwall-${id})`} />
+      <polygon points="640,0 410,95 410,240 640,360" fill={`url(#rwall-${id})`} />
+      <polygon points="230,95 410,95 410,240 230,240" fill="#ddd5c4" />
+      <rect width="640" height="360" filter={`url(#wall-${id})`} opacity="0.9" />
+      {/* floorboards with grain, darker towards the camera */}
+      <polygon points="0,360 230,240 410,240 640,360" fill={`url(#floor-${id})`} />
+      <g clipPath={`url(#fl-${id})`}>
+        <clipPath id={`fl-${id}`}>
+          <polygon points="0,360 230,240 410,240 640,360" />
+        </clipPath>
+        {Array.from({ length: 13 }, (_, i) => (
+          <line key={i} x1={230 + i * 15} y1={240} x2={-160 + i * 80} y2={360} stroke="#4a3626" strokeWidth={1.2} opacity={0.7} />
+        ))}
+        <rect width="640" height="360" filter={`url(#wood-${id})`} />
+        {/* a runner rug down the middle */}
+        <polygon points="285,240 355,240 420,360 220,360" fill="#7a2f2f" opacity="0.85" />
+        <polygon points="291,244 349,244 408,356 232,356" fill="none" stroke="#c9a45a" strokeWidth={2} opacity="0.7" />
+      </g>
+      {/* skirting boards */}
+      <polygon points="0,352 230,236 230,240 0,360" fill="#efe9dc" />
+      <polygon points="640,352 410,236 410,240 640,360" fill="#e8e1d2" />
+      <rect x="230" y="236" width="180" height="4" fill="#efe9dc" />
+      {/* back door: frame, panels, window, handle; open shows daylight */}
+      <rect x="279" y="114" width="82" height="126" fill="#f1ece0" />
+      {open === "back door" ? (
+        <>
+          <rect x="285" y="120" width="70" height="120" fill="#bcd6ec" />
+          <rect x="285" y="200" width="70" height="40" fill="#7fae6a" />
+          <polygon points="285,120 258,110 258,250 285,240" fill={`url(#door-${id})`} />
+        </>
+      ) : (
+        <>
+          <rect x="285" y="120" width="70" height="120" fill={`url(#door-${id})`} />
+          <rect x="297" y="130" width="46" height="36" fill="#bcd6ec" stroke="#4d3826" strokeWidth={2} />
+          <line x1="320" y1="130" x2="320" y2="166" stroke="#4d3826" strokeWidth={1.5} />
+          <rect x="295" y="176" width="22" height="54" rx="2" fill="none" stroke="#5a3f28" strokeWidth={1.5} />
+          <rect x="323" y="176" width="22" height="54" rx="2" fill="none" stroke="#5a3f28" strokeWidth={1.5} />
+          <circle cx="346" cy="182" r="2.6" fill="#d4b14a" />
+        </>
+      )}
+      <text x="320" y="110" textAnchor="middle" fontSize="9" fill="#6a5a48" fontFamily="Arial, sans-serif">BACK DOOR</text>
+      {/* the room door on the left wall */}
+      <polygon points="64,112 176,137 176,272 64,306" fill="#f1ece0" />
+      {open === "room" ? (
+        <>
+          <polygon points="70,118 170,140 170,268 70,300" fill="#f3e2b4" />
+          <polygon points="70,118 170,140 170,268 70,300" fill="#000" opacity="0.15" />
+          <polygon points="70,118 40,126 40,312 70,300" fill={`url(#door-${id})`} />
+        </>
+      ) : (
+        <>
+          <polygon points="70,118 170,140 170,268 70,300" fill={`url(#door-${id})`} />
+          <polygon points="82,138 120,147 120,196 82,190" fill="none" stroke="#5a3f28" strokeWidth={1.5} />
+          <polygon points="128,149 160,156 160,201 128,197" fill="none" stroke="#5a3f28" strokeWidth={1.5} />
+          <circle cx="160" cy="214" r="3" fill="#d4b14a" />
+        </>
+      )}
+      <rect x="70" y="92" width="104" height="18" rx="3" fill="#f6f1e4" stroke="#6b5a48" strokeWidth={1.5} />
+      <text x="122" y="105" textAnchor="middle" fontSize="11" fill="#3b3128" fontFamily="Arial, sans-serif" fontWeight="bold">{room.toUpperCase()}</text>
+      {/* the garage door on the right wall: plain metal */}
+      <polygon points="576,112 464,137 464,272 576,306" fill="#e8e1d2" />
+      <polygon points="570,118 470,140 470,268 570,300" fill={open === "garage" ? "#4a4d50" : "#7b8086"} />
+      {open !== "garage" && (
+        <>
+          {[0, 1, 2, 3].map((i) => (
+            <line key={i} x1={570} y1={150 + i * 38} x2={470} y2={166 + i * 27} stroke="#5f6469" strokeWidth={1.5} />
+          ))}
+          <rect x="478" y="200" width="8" height="18" rx="2" fill="#2b2d30" />
+        </>
+      )}
+      <rect x="474" y="92" width="96" height="18" rx="3" fill="#f6f1e4" stroke="#6b5a48" strokeWidth={1.5} />
+      <text x="522" y="105" textAnchor="middle" fontSize="11" fill="#3b3128" fontFamily="Arial, sans-serif" fontWeight="bold">GARAGE</text>
+      {/* the stairs going up beside the back wall, with a banister */}
+      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+        <g key={i}>
+          <polygon points={`${398 - i * 4},${240 - i * 18} ${440 - i * 4},${240 - i * 18} ${440 - i * 4},${223 - i * 18} ${398 - i * 4},${223 - i * 18}`} fill="#9a7b5c" />
+          <rect x={398 - i * 4} y={221 - i * 18} width="42" height="3" fill="#c7a984" />
+        </g>
+      ))}
+      <line x1="444" y1="238" x2="414" y2="108" stroke="#4a3424" strokeWidth={4} />
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <line key={i} x1={442 - i * 4.6} y1={232 - i * 20} x2={442 - i * 4.6} y2={212 - i * 20} stroke="#5d4430" strokeWidth={1.6} />
+      ))}
+      {/* a radiator, a coat hook with coats, a picture */}
+      <polygon points="190,206 222,214 222,236 190,234" fill="#f3f1ec" stroke="#cfcac0" strokeWidth={1} />
+      {[0, 1, 2, 3, 4].map((i) => (
+        <line key={i} x1={194 + i * 6} y1={208 + i * 1.6} x2={194 + i * 6} y2={234} stroke="#cfcac0" strokeWidth={1} />
+      ))}
+      <rect x="196" y="140" width="22" height="3" fill="#4a3424" transform="skewY(14)" />
+      <path d="M200 192 q-6 26 2 40 l10 -2 q4 -18 -2 -36z" fill="#3c4a5c" />
+      <path d="M210 194 q-4 24 4 36 l9 -1 q2 -18 -4 -33z" fill="#8a3b33" />
+      <polygon points="440,130 462,124 462,150 440,154" fill="#efe6cf" stroke="#6b5a48" strokeWidth={2} />
+      <polygon points="444,134 458,130 458,146 444,149" fill="#7fa7c8" />
+      {/* the ceiling light and the pool of light it throws */}
+      <ellipse cx="320" cy="42" rx="34" ry="7" fill="#fffbe8" />
+      <ellipse cx="320" cy="42" rx="80" ry="30" fill={`url(#glare-${id})`} opacity="0.6" />
+      <rect width="640" height="360" fill={`url(#pool-${id})`} />
+    </g>
+  );
+}
+
 function CctvStill({ x }: { x: Extract<Exhibit, { kind: "cctv" }> }) {
   const id = `${x.time.replace(":", "")}${x.spot.replace(" ", "")}${x.people[0]?.name.replace(" ", "") ?? ""}`;
   const at = SPOT[x.spot];
   const back = x.spot === "room" ? x.action === "in" : x.action === "out";
-  const open = x.spot;
+  const placed =
+    x.people.length === 1
+      ? [{ p: x.people[0], px: at.x, py: at.y, ps: at.s }]
+      : x.people.map((p, i) => ({ p, px: 130 + (i * 380) / Math.max(1, x.people.length - 1), py: 330, ps: 0.95 }));
   return (
     <figure className="overflow-hidden rounded-xl border-[3px] border-ink bg-black shadow-[4px_4px_0_#111]">
       <svg viewBox="0 0 640 360" className="block w-full" role="img" aria-label={`Camera still, ${pm(x.time)}, hall camera: ${x.people.map((p) => p.name).join(", ")}`}>
         <CameraFilters id={id} />
         <g filter={`url(#wash-${id})`}>
-          {/* the hall in perspective: back wall, side walls, floor */}
-          <rect width="640" height="360" fill="#c9c2b3" />
-          <polygon points="0,0 230,95 410,95 640,0" fill="#ddd6c6" />
-          <polygon points="0,0 230,95 230,240 0,360" fill="#cfc7b6" />
-          <polygon points="640,0 410,95 410,240 640,360" fill="#cbc3b1" />
-          <polygon points="0,360 230,240 410,240 640,360" fill="#9b7f62" />
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <line key={i} x1={230 + i * 36} y1={240} x2={-60 + i * 152} y2={360} stroke="#86694f" strokeWidth={2} />
-          ))}
-          <polygon points="230,95 410,95 410,240 230,240" fill="#e4dece" />
-          {/* back door with a window, open when someone goes through it */}
-          <rect x="285" y="120" width="70" height="120" fill={open === "back door" ? "#a9c8e8" : "#7a5a3c"} stroke="#4d3826" strokeWidth={3} />
-          {open === "back door" ? <polygon points="285,120 262,112 262,248 285,240" fill="#7a5a3c" /> : <rect x="300" y="132" width="40" height="34" fill="#a9c8e8" stroke="#4d3826" strokeWidth={2} />}
-          <text x="320" y="113" textAnchor="middle" fontSize="11" fill="#5a4a3a" fontFamily="Arial, sans-serif">BACK DOOR</text>
-          {/* the room door on the left wall, with its sign */}
-          <polygon points="70,118 170,140 170,268 70,300" fill={open === "room" ? "#f0e0b0" : "#8a6644"} stroke="#4d3826" strokeWidth={3} />
-          <rect x="70" y="92" width="104" height="18" rx="3" fill="#f6f1e4" stroke="#6b5a48" strokeWidth={1.5} />
-          <text x="122" y="105" textAnchor="middle" fontSize="11" fill="#3b3128" fontFamily="Arial, sans-serif" fontWeight="bold">{x.room.toUpperCase()}</text>
-          {/* the garage door on the right wall */}
-          <polygon points="570,118 470,140 470,268 570,300" fill={open === "garage" ? "#b9b9b9" : "#6d7176"} stroke="#3c3f42" strokeWidth={3} />
-          <rect x="474" y="92" width="96" height="18" rx="3" fill="#f6f1e4" stroke="#6b5a48" strokeWidth={1.5} />
-          <text x="522" y="105" textAnchor="middle" fontSize="11" fill="#3b3128" fontFamily="Arial, sans-serif" fontWeight="bold">GARAGE</text>
-          {/* the stairs, going up to the right */}
-          {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-            <polygon key={i} points={`${400 - i * 4},${240 - i * 18} ${440 - i * 4},${240 - i * 18} ${440 - i * 4},${222 - i * 18} ${400 - i * 4},${222 - i * 18}`} fill={i % 2 ? "#a7896a" : "#b39576"} opacity={0.95} />
-          ))}
-          <line x1="440" y1="240" x2="412" y2="110" stroke="#5a4330" strokeWidth={4} />
-          {/* a ceiling light */}
-          <ellipse cx="320" cy="40" rx="40" ry="8" fill="#fffbe8" opacity="0.8" />
-          {/* the people */}
-          {x.people.length === 1 ? (
-            <Person {...x.people[0]} x={at.x} y={at.y} scale={at.s} back={back} />
-          ) : (
-            x.people.map((p, i) => <Person key={p.name} {...p} x={130 + (i * 380) / Math.max(1, x.people.length - 1)} y={330} scale={0.95} />)
-          )}
+          <g filter={`url(#soft-${id})`}>
+            <Hall id={id} room={x.room} open={x.spot} />
+            {/* soft shadows on the floor, then the people, lit from above */}
+            {placed.map(({ p, px, py, ps }) => (
+              <ellipse key={`s-${p.name}`} cx={px + 6 * ps} cy={py + 2} rx={30 * ps} ry={8 * ps} fill="#000" opacity="0.45" filter={`url(#shadow-${id})`} />
+            ))}
+            {placed.map(({ p, px, py, ps }) => (
+              <Person key={p.name} {...p} x={px} y={py} scale={ps} back={back && x.people.length === 1} />
+            ))}
+          </g>
         </g>
         {/* face tags, as the camera software draws them */}
-        {(x.people.length === 1 ? [{ ...x.people[0], tx: at.x, ty: at.y - 150 * at.s }] : x.people.map((p, i) => ({ ...p, tx: 130 + (i * 380) / Math.max(1, x.people.length - 1), ty: 330 - 148 }))).map((p) => (
-          <g key={p.name}>
-            <rect x={p.tx - 52} y={p.ty - 18} width={104} height={18} fill="#0a0a0a" opacity={0.75} />
-            <text x={p.tx} y={p.ty - 5} textAnchor="middle" fontSize="12" fill="#9bff8a" fontFamily="'Courier New', monospace" fontWeight="bold">
-              {p.name.toUpperCase()}
-            </text>
-          </g>
-        ))}
+        {placed.map(({ p, px, py, ps }) => {
+          // One person: the tag sits under their feet, clear of the door signs. A group: above their heads.
+          const ty = placed.length === 1 ? py + 4 : py - 150 * ps - 18;
+          return (
+            <g key={`t-${p.name}`}>
+              <rect x={px - 32 * ps} y={py - 150 * ps} width={64 * ps} height={152 * ps} fill="none" stroke="#9bff8a" strokeWidth={1.2} opacity={0.7} />
+              <rect x={px - 52} y={ty} width={104} height={18} fill="#0a0a0a" opacity={0.75} />
+              <text x={px} y={ty + 13} textAnchor="middle" fontSize="12" fill="#9bff8a" fontFamily="'Courier New', monospace" fontWeight="bold">
+                {p.name.toUpperCase()}
+              </text>
+            </g>
+          );
+        })}
         <rect width="640" height="360" fill={`url(#scan-${id})`} />
         <rect width="640" height="360" filter={`url(#grain-${id})`} />
         <rect width="640" height="360" fill={`url(#vig-${id})`} />
