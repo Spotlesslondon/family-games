@@ -138,7 +138,42 @@ body {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.15; }
   }
+  /* A part fixed: the stamp slams down on every phone. */
+  .machine-stamp {
+    animation: machine-stamp 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+  @keyframes machine-stamp {
+    0% { transform: rotate(-8deg) scale(2.2); opacity: 0; }
+    60% { transform: rotate(-8deg) scale(0.92); opacity: 1; }
+    100% { transform: rotate(-8deg) scale(1); opacity: 1; }
+  }
+  /* A light turning green pulses once. */
+  .machine-light-on {
+    animation: machine-light-on 0.9s ease-out;
+  }
+  @keyframes machine-light-on {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.45); }
+    100% { transform: scale(1); }
+  }
+  /* The whole machine fixed: confetti, then the score counts up. */
+  .machine-confetti {
+    animation: machine-confetti 2.6s ease-in both;
+  }
+  @keyframes machine-confetti {
+    0% { transform: translateY(-10vh) rotate(0); opacity: 1; }
+    100% { transform: translateY(105vh) rotate(720deg); opacity: 0.9; }
+  }
+  .machine-big {
+    animation: machine-big 0.6s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+  @keyframes machine-big {
+    0% { transform: scale(0.4); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .machine-knob { transition: none; }
+  .machine-stamp { transform: rotate(-8deg); }
+  .machine-confetti { display: none; }
 }

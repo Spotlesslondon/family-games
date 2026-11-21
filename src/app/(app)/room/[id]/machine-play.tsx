@@ -69,11 +69,14 @@ export function MachinePlay({
   }
 
   const header = (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-sm font-bold tracking-widest text-muted">
-        {s.round > 0 ? `MACHINE ${s.round} OF ${s.settings.rounds}` : `${s.settings.rounds} ${s.settings.rounds === 1 ? "MACHINE" : "MACHINES"}`} · LEVEL {s.settings.level}
-      </span>
-      {s.round > 0 && <Wobbles n={s.wobbles} />}
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-bold tracking-widest text-muted">
+          {s.round > 0 ? `MACHINE ${s.round} OF ${s.settings.rounds}` : `${s.settings.rounds} ${s.settings.rounds === 1 ? "MACHINE" : "MACHINES"}`} · LEVEL {s.settings.level}
+        </span>
+        {s.round > 0 && <Wobbles n={s.wobbles} />}
+      </div>
+      {s.round > 0 && phase === "fixing" && <PartLights parts={s.parts} />}
     </div>
   );
 
@@ -117,9 +120,17 @@ export function MachinePlay({
     const L = s.last;
     const last = s.round >= s.settings.rounds;
     return (
-      <section className="flex flex-1 flex-col gap-4">
+      <section className="relative flex flex-1 flex-col gap-4">
+        {L.won && <Confetti />}
         {header}
-        <h2 className="font-display text-4xl font-bold leading-tight">{L.won ? "Fixed!" : "Pop!"}</h2>
+        {L.won ? (
+          <div className="machine-big my-4 flex flex-col items-center gap-2 text-center">
+            <PartLights parts={s.parts} big />
+            <h2 className="font-display text-7xl font-bold leading-none">Fixed!</h2>
+          </div>
+        ) : (
+          <h2 className="font-display text-4xl font-bold leading-tight">Pop!</h2>
+        )}
         {L.won ? (
           <p className="text-lg">
             All {total} parts fixed, {L.wobbles ? `${L.wobbles} ${L.wobbles === 1 ? "wobble" : "wobbles"}.` : "no wobbles. Clean fix: 1 extra point."}
@@ -134,7 +145,7 @@ export function MachinePlay({
         </p>
         <div className="card flex items-center justify-between px-5 py-4">
           <span className="font-bold">Team score</span>
-          <span className="font-display text-3xl font-bold">{s.score}</span>
+          <span className="font-display text-3xl font-bold">{L.won ? <CountUp from={s.score - L.points} to={s.score} /> : s.score}</span>
         </div>
         {!last && s.nextFixerId && (
           <p className="text-muted">
@@ -210,13 +221,102 @@ function Flash({ flash }: { flash: MachinePublic["flash"] }) {
     const id = setTimeout(() => setHidden(n), 4000);
     return () => clearTimeout(id);
   }, [n]);
+  useEffect(() => {
+    if (n === null || !flash) return;
+    buzz(flash.text.startsWith("Wobble") ? [60, 50, 60] : [40]);
+  }, [n, flash]);
   if (!flash || hidden === flash.n) return null;
   const wobble = flash.text.startsWith("Wobble");
+  if (wobble) {
+    return (
+      <p role="status" className="rounded-2xl bg-alert px-4 py-3 text-center font-display text-2xl font-bold text-white">
+        {flash.text}
+      </p>
+    );
+  }
+  // A part fixed, or the lamps changing: a stamp slams down over the screen on every phone.
+  const changed = flash.text.startsWith("The lamps changed");
+  const words = changed ? "GO AGAIN" : flash.text.replace(/!$/, "").toUpperCase();
   return (
-    <p role="status" className={`rounded-2xl px-4 py-2 text-center font-display text-xl font-bold ${wobble ? "bg-alert text-white" : "bg-go text-ink"}`}>
-      {flash.text}
-    </p>
+    <div role="status" className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center px-6" aria-live="assertive">
+      <div className={`machine-stamp rounded-3xl border-[6px] px-6 py-4 text-center font-display text-5xl font-bold leading-none shadow-[8px_8px_0_#111] ${changed ? "border-ink bg-go text-ink" : "border-[#1f6b3a] bg-[#3da35d] text-white"}`}>
+        {words}
+        {changed && <div className="mt-2 text-base font-bold">The lamps changed. Find the rule again.</div>}
+      </div>
+    </div>
   );
+}
+
+/** A short buzz where the phone allows it (Android; iPhones ignore it). */
+function buzz(pattern: number[]) {
+  try {
+    if (typeof navigator !== "undefined" && "vibrate" in navigator && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) navigator.vibrate(pattern);
+  } catch {
+    // nothing to do; the buzz is a nicety
+  }
+}
+
+/**
+ * The machine's three lights, on every phone: red while a part is jammed,
+ * green once it is fixed, amber between the two stages of the lamps. Helpers
+ * cannot see the machine; this is how they watch it come back to life.
+ */
+function PartLights({ parts, big }: { parts: MachinePublic["parts"]; big?: boolean }) {
+  const keys = (["lamps", "pictures", "dial"] as const).filter((k) => parts[k]);
+  return (
+    <div className={`flex ${big ? "justify-center gap-6" : "justify-around"} rounded-2xl border-[3px] border-ink bg-[#3b3f46] px-3 py-2`} aria-label="The machine's parts">
+      {keys.map((k) => {
+        const st = parts[k]!;
+        const colour = st === "fixed" ? "#3da35d" : st === "stage2" ? "#f4c542" : "#e4572e";
+        return (
+          <div key={k} className="flex flex-col items-center gap-1">
+            <span
+              key={`${k}-${st}`}
+              className={`rounded-full border-[3px] border-ink ${big ? "h-10 w-10" : "h-6 w-6"} ${st === "fixed" ? "machine-light-on" : ""}`}
+              style={{ background: colour, boxShadow: `0 0 ${st === "fixed" ? 14 : 8}px 2px ${colour}` }}
+              aria-label={`${PART_NAMES[k]}: ${st === "fixed" ? "fixed" : st === "stage2" ? "stage two" : "jammed"}`}
+            />
+            <span className={`font-bold text-white ${big ? "text-sm" : "text-[11px]"}`}>{PART_NAMES[k]}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Falling confetti for a fixed machine. Drawn here, no library; hidden for reduced motion. */
+function Confetti() {
+  const colours = ["#ffd23f", "#3da35d", "#2e6fe4", "#e4572e", "#8e5bd3", "#f7f3e8"];
+  const pieces = Array.from({ length: 48 }, (_, i) => ({
+    left: (i * 37) % 100,
+    delay: ((i * 13) % 20) / 10,
+    colour: colours[i % colours.length],
+    w: 6 + (i % 3) * 3,
+    h: 10 + (i % 4) * 3,
+    round: i % 5 === 0,
+  }));
+  return (
+    <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden" aria-hidden>
+      {pieces.map((p, i) => (
+        <span
+          key={i}
+          className="machine-confetti absolute top-0"
+          style={{ left: `${p.left}%`, width: p.w, height: p.h, background: p.colour, borderRadius: p.round ? "50%" : 2, animationDelay: `${p.delay}s` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** The team score counting up to its new value. */
+function CountUp({ from, to }: { from: number; to: number }) {
+  const [shown, setShown] = useState(Math.min(from, to));
+  useEffect(() => {
+    if (shown >= to) return;
+    const id = setTimeout(() => setShown((v) => Math.min(v + 1, to)), 350);
+    return () => clearTimeout(id);
+  }, [shown, to]);
+  return <>{Math.min(shown, to)}</>;
 }
 
 /** The whole rulebook, in tabs by part. Every Helper sees all of it; the Fixer never does. */
@@ -224,6 +324,15 @@ function Rulebook({ cards, parts }: { cards: RuleCard[]; parts: MachinePublic["p
   const tabs = (["lamps", "pictures", "dial", "tag"] as const).filter((t) => cards.some((c) => c.part === t));
   const [tab, setTab] = useState<(typeof tabs)[number]>(tabs[0]);
   const label = (t: (typeof tabs)[number]) => (t === "tag" ? "Which manual" : PART_NAMES[t]);
+  const isFixed = (t: (typeof tabs)[number]) => t !== "tag" && parts[t] === "fixed";
+  // When the part on screen gets fixed, move to the next jammed part by itself.
+  const [movedFor, setMovedFor] = useState<string | null>(null);
+  const fixedKey = tabs.filter(isFixed).join(",");
+  if (isFixed(tab) && movedFor !== fixedKey) {
+    setMovedFor(fixedKey);
+    const next = tabs.find((t) => t !== "tag" && !isFixed(t));
+    if (next) setTab(next);
+  }
   const active = tabs.includes(tab) ? tab : tabs[0];
   return (
     <div className="flex flex-col gap-3">
@@ -239,11 +348,17 @@ function Rulebook({ cards, parts }: { cards: RuleCard[]; parts: MachinePublic["p
             className={`flex items-center gap-2 rounded-full border-2 border-ink px-4 py-2 font-display text-lg font-bold ${active === t ? "bg-go" : "bg-surface"}`}
           >
             {label(t)}
-            {t !== "tag" && parts[t] === "fixed" && <span className="h-3 w-3 rounded-full border-2 border-ink bg-[#3da35d]" aria-label="fixed" />}
+            {isFixed(t) && <Tick />}
           </button>
         ))}
       </div>
-      {cards
+      {isFixed(active) && (
+        <div className="flex flex-col items-center gap-2 rounded-3xl border-[4px] border-[#1f6b3a] bg-[#3da35d] px-5 py-6 text-center text-white shadow-[6px_6px_0_#111]">
+          <span className="font-display text-4xl font-bold">{PART_NAMES[active as PartKey]} fixed</span>
+          <span className="font-bold">Nothing more to read here.</span>
+        </div>
+      )}
+      {!isFixed(active) && cards
         .filter((c) => c.part === active)
         .map((c, i) => (
           <div key={i} className="card flex flex-col gap-2 px-5 py-4" role="tabpanel">
@@ -253,10 +368,17 @@ function Rulebook({ cards, parts }: { cards: RuleCard[]; parts: MachinePublic["p
                 <Arrows text={l} />
               </p>
             ))}
-            {c.part !== "tag" && parts[c.part] === "fixed" && <span className="self-start rounded-full bg-go px-3 py-1 text-sm font-extrabold">Fixed</span>}
           </div>
         ))}
     </div>
+  );
+}
+
+function Tick() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6 rounded-full border-2 border-ink bg-[#3da35d]" aria-label="fixed">
+      <path d="M6 12.5l4 4 8-9" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
