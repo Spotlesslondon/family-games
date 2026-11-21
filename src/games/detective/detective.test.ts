@@ -86,6 +86,31 @@ describe("Detective cases", () => {
     }
   });
 
+  it("every picture carries exactly the words the proof reads, and shows the same facts", () => {
+    for (const level of [1, 2] as DetectiveLevel[]) {
+      for (let seed = 1; seed <= 300; seed++) {
+        const c = buildCase(seed, level);
+        const t = c.truth;
+        for (const e of all(c)) {
+          // Forensics' one bag carries both its lines; everything else one or more whole lines per picture.
+          expect(e.exhibits.map((x) => x.caption).join(" "), `${level}/${seed} ${e.role}`).toBe(e.lines.join(" "));
+          for (const { exhibit: x, caption } of e.exhibits) {
+            if (x.kind === "cctv") {
+              for (const p of x.people) expect(t.wear[p.name]).toEqual({ colour: p.colour, clothes: p.clothes });
+              expect(caption.startsWith(x.time) || x.spot === "hall").toBe(true);
+            }
+            if (x.kind === "photo") expect(caption.includes("is empty")).toBe(!x.present);
+            if (x.kind === "bag") expect(x.colour).toBe(t.wear[t.culprit].colour);
+            if (x.kind === "chat") for (const m of x.messages) expect(caption).toContain(m.text.match(/from (\d+:\d\d) until (\d+:\d\d)/)?.[0] ?? "");
+          }
+        }
+        // The hall shot shows every suspect, so CCTV covers what everyone wore.
+        const hall = c.evidence.cctv.exhibits[0].exhibit;
+        expect(hall.kind === "cctv" && hall.people.map((p) => p.name).sort()).toEqual([...t.suspects].sort());
+      }
+    }
+  });
+
   it("at level 2 the culprit has an alibi that stops inside the window, so the times matter", () => {
     let nearMiss = 0;
     for (let seed = 1; seed <= 200; seed++) {

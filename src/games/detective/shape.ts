@@ -52,10 +52,29 @@ export const LEVEL_NAMES: Record<DetectiveLevel, string> = {
 export const POINTS_RIGHT = 3;
 export const POINTS_NO_HINT = 1;
 
+/** Where a CCTV still was taken: the hall camera sees these doors and the stairs. */
+export type CctvSpot = "hall" | "room" | "back door" | "garage" | "stairs";
+export type ItemKey = "cake" | "trophy" | "jar" | "remote" | "tin" | "jigsaw";
+
+/**
+ * Each piece of evidence as the thing it is (Joshua, 21 Nov 18:41: photos
+ * must look like photos, CCTV like footage, a message like a message on a
+ * phone). Drawn on the phone from these facts, which come from the same truth
+ * as the words, so a picture can never disagree with its caption.
+ */
+export type Exhibit =
+  | { kind: "cctv"; time: string; spot: CctvSpot; people: { name: string; colour: string; clothes: string }[]; action: "in" | "out" | "stand"; room: string }
+  | { kind: "photo"; time: string; item: ItemKey; itemName: string; spot: string; present: boolean }
+  | { kind: "chat"; title: string; clock: string; messages: { sender: string; time: string; text: string }[] }
+  | { kind: "lock"; clock: string; who: string; opened: string; left: string }
+  | { kind: "bag"; colour: string; spot: string; room: string; mark: string };
+
 export interface Evidence {
   role: RoleKey;
   title: string;
+  /** The facts in words: read out loud, and what the proof reads. */
   lines: string[];
+  exhibits: { exhibit: Exhibit; caption: string }[];
 }
 
 export interface CasePublic {

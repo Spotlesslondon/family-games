@@ -23,13 +23,14 @@
 // going in at a time when the thing was still there.
 
 import { seededRng, shuffle } from "@/engine/rng";
-import { LEVELS, type DetectiveLevel, type Evidence, type RoleKey } from "./shape";
+import { LEVELS, type CctvSpot, type DetectiveLevel, type Evidence, type Exhibit, type ItemKey, type RoleKey } from "./shape";
 
 const NAMES = ["Uncle Bob", "Auntie May", "Cousin Pip", "Grandpa Joe", "Nana Rose", "Cousin Kit", "Auntie Jen", "Uncle Raj"] as const;
 const COLOURS = ["red", "green", "blue", "yellow", "purple", "orange"] as const;
 const CLOTHES = ["scarf", "hat", "jumper", "cardigan"] as const;
 
 export interface Theme {
+  key: ItemKey;
   item: string;
   room: string;
   /** Where it sat, and where it is missing from. */
@@ -42,12 +43,12 @@ export interface Theme {
 const list = (names: string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
 export const THEMES: Theme[] = [
-  { item: "birthday cake", room: "kitchen", spot: "kitchen side", mark: "Icing smudges on the kitchen floor.", story: (n) => `The birthday cake was on the kitchen side. Now it is gone. ${list(n)} were in the house. Who took it?` },
-  { item: "football trophy", room: "living room", spot: "trophy shelf", mark: "A clean square in the dust where the trophy stood.", story: (n) => `The football trophy was on the shelf in the living room. Now it is gone. ${list(n)} were in the house. Who took it?` },
-  { item: "cookie jar", room: "kitchen", spot: "top of the fridge", mark: "Biscuit crumbs on the kitchen floor.", story: (n) => `The cookie jar was on top of the fridge. Now it is gone. ${list(n)} were in the house. Who took it?` },
-  { item: "TV remote", room: "living room", spot: "arm of the sofa", mark: "The sofa cushions have been moved.", story: (n) => `The TV remote was on the arm of the sofa. Now it is gone, just before the big film. ${list(n)} were in the house. Who took it?` },
-  { item: "tin of chocolates", room: "dining room", spot: "dining table", mark: "A gold wrapper under the dining table.", story: (n) => `The tin of chocolates was on the dining table. Now it is gone. ${list(n)} were in the house. Who took it?` },
-  { item: "jigsaw box", room: "playroom", spot: "toy shelf", mark: "Two jigsaw pieces on the playroom floor.", story: (n) => `The new jigsaw was on the toy shelf in the playroom. Now it is gone. ${list(n)} were in the house. Who took it?` },
+  { key: "cake", item: "birthday cake", room: "kitchen", spot: "kitchen side", mark: "Icing smudges on the kitchen floor.", story: (n) => `The birthday cake was on the kitchen side. Now it is gone. ${list(n)} were in the house. Who took it?` },
+  { key: "trophy", item: "football trophy", room: "living room", spot: "trophy shelf", mark: "A clean square in the dust where the trophy stood.", story: (n) => `The football trophy was on the shelf in the living room. Now it is gone. ${list(n)} were in the house. Who took it?` },
+  { key: "jar", item: "cookie jar", room: "kitchen", spot: "top of the fridge", mark: "Biscuit crumbs on the kitchen floor.", story: (n) => `The cookie jar was on top of the fridge. Now it is gone. ${list(n)} were in the house. Who took it?` },
+  { key: "remote", item: "TV remote", room: "living room", spot: "arm of the sofa", mark: "The sofa cushions have been moved.", story: (n) => `The TV remote was on the arm of the sofa. Now it is gone, just before the big film. ${list(n)} were in the house. Who took it?` },
+  { key: "tin", item: "tin of chocolates", room: "dining room", spot: "dining table", mark: "A gold wrapper under the dining table.", story: (n) => `The tin of chocolates was on the dining table. Now it is gone. ${list(n)} were in the house. Who took it?` },
+  { key: "jigsaw", item: "jigsaw box", room: "playroom", spot: "toy shelf", mark: "Two jigsaw pieces on the playroom floor.", story: (n) => `The new jigsaw was on the toy shelf in the playroom. Now it is gone. ${list(n)} were in the house. Who took it?` },
 ];
 
 type Place = "garden" | "garage" | "upstairs" | "the loft";
@@ -155,59 +156,98 @@ export function buildCase(seed: number, level: DetectiveLevel): Case {
 function writeEvidence(t: Truth, level: DetectiveLevel, rng: () => number): Record<RoleKey, Evidence> {
   const at = (m: number) => time(t.hour, m);
   const { theme } = t;
+  const dress = (who: string) => ({ name: who, colour: t.wear[who].colour, clothes: t.wear[who].clothes });
+  type Shown = { exhibit: Exhibit; caption: string };
+  const still = (m: number, spot: CctvSpot, who: string, action: "in" | "out" | "stand", caption: string): [number, Shown] => [
+    m,
+    { exhibit: { kind: "cctv", time: at(m), spot, people: [dress(who)], action, room: theme.room }, caption },
+  ];
 
-  // CCTV: what everyone wore, then who walked where, in time order.
-  const moves: [number, string][] = [];
+  // CCTV: everyone in the hall at the hour, so the camera shows what each person
+  // wore, then every move, in time order.
+  const moves: [number, Shown][] = [];
   for (const s of t.stays) {
     if (s.place === "garden") {
-      moves.push([s.from, `${at(s.from)} ${s.who} goes out of the back door.`]);
-      moves.push([s.to, `${at(s.to)} ${s.who} comes back in by the back door.`]);
+      moves.push(still(s.from, "back door", s.who, "out", `${at(s.from)} ${s.who} goes out of the back door.`));
+      moves.push(still(s.to, "back door", s.who, "in", `${at(s.to)} ${s.who} comes back in by the back door.`));
     } else if (s.place === "garage") {
-      moves.push([s.from, `${at(s.from)} ${s.who} walks to the garage.`]);
-      moves.push([s.to, `${at(s.to)} ${s.who} comes back from the garage.`]);
+      moves.push(still(s.from, "garage", s.who, "out", `${at(s.from)} ${s.who} walks to the garage.`));
+      moves.push(still(s.to, "garage", s.who, "in", `${at(s.to)} ${s.who} comes back from the garage.`));
     } else {
-      moves.push([s.from, `${at(s.from)} ${s.who} walks up the stairs.`]);
-      moves.push([s.to, `${at(s.to)} ${s.who} comes down the stairs.`]);
+      moves.push(still(s.from, "stairs", s.who, "out", `${at(s.from)} ${s.who} walks up the stairs.`));
+      moves.push(still(s.to, "stairs", s.who, "in", `${at(s.to)} ${s.who} comes down the stairs.`));
     }
   }
   for (const v of t.visits) {
-    moves.push([v.in, `${at(v.in)} ${v.who} walks into the ${theme.room}.`]);
-    if (v.out !== null) moves.push([v.out, `${at(v.out)} ${v.who} walks out of the ${theme.room}.`]);
+    moves.push(still(v.in, "room", v.who, "in", `${at(v.in)} ${v.who} walks into the ${theme.room}.`));
+    if (v.out !== null) moves.push(still(v.out, "room", v.who, "out", `${at(v.out)} ${v.who} walks out of the ${theme.room}.`));
   }
   moves.sort((a, b) => a[0] - b[0]);
+  const order = shuffle([...t.suspects], rng);
+  const wearLines = order.map((s) => `${s} is wearing ${a(t.wear[s].colour)} ${t.wear[s].clothes}.`);
+  const group: Shown = { exhibit: { kind: "cctv", time: at(0), spot: "hall", people: order.map(dress), action: "stand", room: theme.room }, caption: wearLines.join(" ") };
   const cctv: Evidence = {
     role: "cctv",
     title: "CCTV: the hall camera",
-    lines: [...shuffle([...t.suspects], rng).map((s) => `${s} is wearing ${a(t.wear[s].colour)} ${t.wear[s].clothes}.`), ...moves.map(([, l]) => l)],
+    lines: [...wearLines, ...moves.map(([, m]) => m.caption)],
+    exhibits: [group, ...moves.map(([, m]) => m)],
   };
 
-  // Witnesses: the neighbour over the fence, and at level 2 what people say.
+  // Witnesses: messages on the family group chat, the neighbour and, at
+  // level 2, people saying where they were.
   const witnessLines: string[] = [];
+  const messages: { m: number; sender: string; text: string }[] = [];
   for (const s of t.stays) {
-    if (s.source === "neighbour") witnessLines.push(`The neighbour watched the garden: ${s.who} was in the garden from ${at(s.from)} until ${at(s.to)}.`);
-    if (s.source === "statement") witnessLines.push(`${s.who} says: I was ${s.place === "upstairs" ? "upstairs" : "in the loft"} from ${at(s.from)} until ${at(s.to)}.`);
+    if (s.source === "neighbour") {
+      witnessLines.push(`The neighbour watched the garden: ${s.who} was in the garden from ${at(s.from)} until ${at(s.to)}.`);
+      messages.push({ m: s.to + 1, sender: "Sue next door", text: `I've been watching the garden over the fence. ${s.who} was out there from ${at(s.from)} until ${at(s.to)}, the whole time.` });
+    }
+    if (s.source === "statement") {
+      const where = s.place === "upstairs" ? "upstairs" : "in the loft";
+      witnessLines.push(`${s.who} says: I was ${where} from ${at(s.from)} until ${at(s.to)}.`);
+      messages.push({ m: s.to + 1, sender: s.who, text: `I was ${where} from ${at(s.from)} until ${at(s.to)}.` });
+    }
   }
-  if (witnessLines.length === 0) witnessLines.push("The neighbour watched the garden the whole time. Nobody went out into it.");
+  if (witnessLines.length === 0) {
+    witnessLines.push("The neighbour watched the garden the whole time. Nobody went out into it.");
+    messages.push({ m: t.goneBy + 4, sender: "Sue next door", text: "I've been watching the garden the whole time. Nobody went out into it." });
+  }
+  messages.sort((x, y) => x.m - y.m);
+  const chat: Shown = {
+    exhibit: { kind: "chat", title: "Family", clock: at(messages[messages.length - 1].m + 1), messages: messages.map((x) => ({ sender: x.sender, time: at(x.m), text: x.text })) },
+    caption: witnessLines.join(" "),
+  };
 
-  // Records: the photos, and the garage fob log.
+  // Records: the photos, and the garage lock app.
   const records: string[] = [];
-  if (level >= 2) records.push(`Photo, ${at(between(1, t.lastSeen - 2, rng))}: the ${theme.item} is on the ${theme.spot}.`);
-  records.push(`Photo, ${at(t.lastSeen)}: the ${theme.item} is on the ${theme.spot}.`);
-  records.push(`Photo, ${at(t.goneBy)}: the ${theme.spot} is empty.`);
+  const recordShown: Shown[] = [];
+  const photo = (m: number, present: boolean) => {
+    const line = present ? `Photo, ${at(m)}: the ${theme.item} is on the ${theme.spot}.` : `Photo, ${at(m)}: the ${theme.spot} is empty.`;
+    records.push(line);
+    recordShown.push({ exhibit: { kind: "photo", time: at(m), item: theme.key, itemName: theme.item, spot: theme.spot, present }, caption: line });
+  };
+  if (level >= 2) photo(between(1, t.lastSeen - 2, rng), true);
+  photo(t.lastSeen, true);
+  photo(t.goneBy, false);
   for (const s of t.stays) {
-    if (s.source === "fob") records.push(`The garage has no other door. ${s.who}'s key fob opened it at ${at(s.from)}, and ${s.who} left at ${at(s.to)}.`);
+    if (s.source !== "fob") continue;
+    const line = `The garage has no other door. ${s.who}'s key fob opened it at ${at(s.from)}, and ${s.who} left at ${at(s.to)}.`;
+    records.push(line);
+    recordShown.push({ exhibit: { kind: "lock", clock: at(s.to + 2), who: s.who, opened: at(s.from), left: at(s.to) }, caption: line });
   }
 
+  const threadLine = `${a(t.wear[t.culprit].colour).replace(/^a/, "A")} wool thread caught on the ${theme.spot}.`;
   const forensics: Evidence = {
     role: "forensics",
     title: `Forensics: the ${theme.room}`,
-    lines: [`${a(t.wear[t.culprit].colour).replace(/^a/, "A")} wool thread caught on the ${theme.spot}.`, theme.mark],
+    lines: [threadLine, theme.mark],
+    exhibits: [{ exhibit: { kind: "bag", colour: t.wear[t.culprit].colour, spot: theme.spot, room: theme.room, mark: theme.mark }, caption: `${threadLine} ${theme.mark}` }],
   };
 
   return {
     cctv,
-    witness: { role: "witness", title: "Witnesses", lines: witnessLines },
-    records: { role: "records", title: "Records", lines: records },
+    witness: { role: "witness", title: "Witnesses", lines: witnessLines, exhibits: [chat] },
+    records: { role: "records", title: "Records", lines: records, exhibits: recordShown },
     forensics,
   };
 }

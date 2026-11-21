@@ -9,6 +9,7 @@ import { useState } from "react";
 import { message } from "@/lib/client/session";
 import { HINTS, LEVEL_NAMES, ROLE_LINES, ROLE_NAMES, type DetectiveLength, type DetectiveLevel, type DetectiveMine, type DetectivePublic, type Evidence, type RoleKey } from "@/games/detective/shape";
 import type { Person } from "./mr-white-play";
+import { ExhibitView } from "./detective-exhibits";
 
 type Act = (type: string, payload?: Record<string, unknown>) => Promise<{ ok?: boolean; reason?: string } | null>;
 
@@ -257,11 +258,19 @@ function EvidenceCard({ e }: { e: Evidence }) {
         {e.role === "cctv" && <span className="ml-auto flex items-center gap-1 text-xs font-bold text-[#ff6b6b]"><span className="h-2.5 w-2.5 rounded-full bg-[#ff4d4d]" />REC</span>}
       </div>
       <p className={`text-sm ${e.role === "cctv" ? "text-[#a7c7a2]" : "text-muted"}`}>{ROLE_LINES[e.role]}</p>
-      {e.lines.map((l, i) => (
-        <p key={i} className={st.line}>
-          {e.role === "records" && l.startsWith("Photo") ? <PhotoLine line={l} /> : l}
-        </p>
-      ))}
+      {(e.exhibits ?? []).length > 0
+        ? e.exhibits.map(({ exhibit, caption }, i) => (
+            <div key={i} className="flex flex-col gap-2 pt-2">
+              <ExhibitView x={exhibit} />
+              {/* The phone, the lock app and the evidence bag already show their words; camera stills and photos get theirs underneath. */}
+              {(exhibit.kind === "cctv" || exhibit.kind === "photo") && <p className={`${st.line} ${exhibit.kind === "photo" ? "mt-3" : ""}`}>{caption}</p>}
+            </div>
+          ))
+        : e.lines.map((l, i) => (
+            <p key={i} className={st.line}>
+              {e.role === "records" && l.startsWith("Photo") ? <PhotoLine line={l} /> : l}
+            </p>
+          ))}
     </div>
   );
 }
