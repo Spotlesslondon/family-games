@@ -44,8 +44,8 @@ export const LEVELS: Record<DetectiveLevel, LevelSpec> = {
 };
 
 export const LEVEL_NAMES: Record<DetectiveLevel, string> = {
-  1: "Explorer. Three suspects, one clue each.",
-  2: "Adventurer. Four suspects, tighter times, people say where they were.",
+  1: "Explorer. Three suspects. Start here.",
+  2: "Adventurer. Four suspects, tighter times, and one alibi that does not quite fit.",
 };
 
 /** Points for the team: a right accusation, and one more for solving it without a hint. */

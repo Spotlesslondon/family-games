@@ -34,8 +34,8 @@ function solveFromText(suspects: string[], evidence: Evidence[]): string[] {
         stays.push({ who: m[1], from: mins(m[2]), to: mins(m[4]) });
       } else if ((m = line.match(/^The neighbour watched the garden: (.+) was in the garden from (\d+:\d\d) until (\d+:\d\d)\.$/))) stays.push({ who: m[1], from: mins(m[2]), to: mins(m[3]) });
       else if ((m = line.match(/^(.+) says: I was (?:upstairs|in the loft) from (\d+:\d\d) until (\d+:\d\d)\.$/))) stays.push({ who: m[1], from: mins(m[2]), to: mins(m[3]) });
-      else if ((m = line.match(/^(.+) is wearing a (\w+) (scarf|hat|jumper|cardigan)\.$/))) wear[m[1]] = m[2];
-      else if ((m = line.match(/^A (\w+) wool thread caught on the .+\.$/))) thread = m[1];
+      else if ((m = line.match(/^(.+) is wearing an? (\w+) (scarf|hat|jumper|cardigan)\.$/))) wear[m[1]] = m[2];
+      else if ((m = line.match(/^An? (\w+) wool thread caught on the .+\.$/))) thread = m[1];
       // Everything else is flavour: who walked where, marks at the scene.
     }
   }
@@ -79,7 +79,9 @@ describe("Detective cases", () => {
         expect(herring.out!).toBeLessThan(t.lastSeen);
         expect(c.evidence.cctv.lines.filter((l) => l.includes(`walks into the ${t.theme.room}`)).length).toBeGreaterThanOrEqual(2);
         // Every line is plain: no "n of m", no em dash.
-        for (const e of all(c)) for (const l of e.lines) expect(l).not.toMatch(/—/);
+        // and never "a orange": the table reads these out loud.
+        for (const e of all(c)) for (const l of e.lines) expect(l).not.toMatch(/—|\ba [aeiou]/i);
+        for (const w of c.why) expect(w).not.toMatch(/\ba [aeiou]/i);
       }
     }
   });

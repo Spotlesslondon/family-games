@@ -76,6 +76,9 @@ export interface Case {
   why: string[];
 }
 
+/** "a red", "an orange". */
+export const a = (word: string) => (/^[aeiou]/.test(word) ? `an ${word}` : `a ${word}`);
+
 export const time = (hour: number, m: number) => `${hour}:${String(m).padStart(2, "0")}`;
 
 function pick<T>(xs: readonly T[], rng: () => number): T {
@@ -175,7 +178,7 @@ function writeEvidence(t: Truth, level: DetectiveLevel, rng: () => number): Reco
   const cctv: Evidence = {
     role: "cctv",
     title: "CCTV: the hall camera",
-    lines: [...shuffle([...t.suspects], rng).map((s) => `${s} is wearing a ${t.wear[s].colour} ${t.wear[s].clothes}.`), ...moves.map(([, l]) => l)],
+    lines: [...shuffle([...t.suspects], rng).map((s) => `${s} is wearing ${a(t.wear[s].colour)} ${t.wear[s].clothes}.`), ...moves.map(([, l]) => l)],
   };
 
   // Witnesses: the neighbour over the fence, and at level 2 what people say.
@@ -198,7 +201,7 @@ function writeEvidence(t: Truth, level: DetectiveLevel, rng: () => number): Reco
   const forensics: Evidence = {
     role: "forensics",
     title: `Forensics: the ${theme.room}`,
-    lines: [`A ${t.wear[t.culprit].colour} wool thread caught on the ${theme.spot}.`, theme.mark],
+    lines: [`${a(t.wear[t.culprit].colour).replace(/^a/, "A")} wool thread caught on the ${theme.spot}.`, theme.mark],
   };
 
   return {
@@ -215,7 +218,7 @@ function writeWhy(t: Truth): string[] {
   const c = t.culprit;
   const visit = t.visits.find((v) => v.who === c)!;
   const lines = [
-    `${c} did it. The ${theme.item} went between ${at(t.lastSeen)} and ${at(t.goneBy)}. ${c} walked into the ${theme.room} at ${at(visit.in)}, wearing a ${t.wear[c].colour} ${t.wear[c].clothes}, and the thread on the ${theme.spot} was ${t.wear[c].colour} wool.`,
+    `${c} did it. The ${theme.item} went between ${at(t.lastSeen)} and ${at(t.goneBy)}. ${c} walked into the ${theme.room} at ${at(visit.in)}, wearing ${a(t.wear[c].colour)} ${t.wear[c].clothes}, and the thread on the ${theme.spot} was ${t.wear[c].colour} wool.`,
   ];
   for (const s of t.suspects) {
     if (s === c) continue;
