@@ -15,11 +15,12 @@ class Table {
   room: RoomSnapshot;
   priv: PrivateMap = {};
   rng = seededRng(11);
+  clock = Date.parse("2026-11-22T20:00:00.000Z");
   constructor(public players: Player[]) {
     this.room = { id: "room-1", version: 0, hostId: "mum", status: "open", currentGame: null, phase: LOBBY, phaseEndsAt: null, state: {}, members: players.map((p) => ({ id: p.id, connected: true })) };
   }
   ctx(): GameContext {
-    return { room: this.room, players: this.players, private: this.priv, now: "2026-11-22T20:00:00.000Z", rng: this.rng };
+    return { room: this.room, players: this.players, private: this.priv, now: new Date(this.clock).toISOString(), rng: this.rng };
   }
   act(actorId: string, type: string, payload?: Record<string, unknown>) {
     const r = applyRoomAction(this.ctx(), { type, actorId, payload });
@@ -53,13 +54,20 @@ class Table {
     expect(this.room.phase).toBe("night");
     return n;
   }
-  /** Everyone makes a night choice; the murderers all choose `pick`. */
+  /** The night clock runs out and a phone nudges the server. */
+  dawn() {
+    this.clock += 60_000;
+    return this.act("mum", "advance_if_expired");
+  }
+  /** Everyone makes a night choice; the murderers all choose `pick`; then the night clock runs out. */
   night(pick: Record<string, unknown>) {
     const day = this.s.day;
+    const guarding = this.s.settings.cards.guard;
     for (const id of this.s.alive) {
       if (this.murderers.includes(id)) this.act(id, "night_pick", { day, ...pick });
-      else this.act(id, "night_pick", { day, action: "guard", player: this.s.alive.find((x) => x !== id) });
+      else this.act(id, "night_pick", { day, action: guarding ? "guard" : "suspect", player: this.s.alive.find((x) => x !== id) });
     }
+    this.dawn();
   }
   /** Everyone still in votes for `who` (who votes for someone else). */
   voteOut(who: string) {
@@ -124,9 +132,9 @@ describe("Ashworth Hall secrecy", () => {
     expect(text).not.toContain("partners");
     expect(t.s.endReveal).toBeNull();
     // Night readiness is a count, never a list of names.
-    t.act(t.plain[0], "night_pick", { day: 1, action: "guard", player: t.murderers[0] });
+    t.act(t.plain[0], "night_pick", { day: 1, action: "suspect", player: t.murderers[0] });
     expect(t.s.nightReady).toBe(1);
-    expect(JSON.stringify(t.room.state)).not.toContain("\"guard\",\"player");
+    expect(JSON.stringify(t.room.state)).not.toContain("suspect");
   });
 });
 
@@ -139,12 +147,15 @@ describe("Ashworth Hall nights", () => {
     expect(t.act(a, "night_pick", { day: 1, action: "kill", player: t.targets[0] }).ok).toBe(false);
     expect(t.act(a, "night_pick", { day: 1, action: "kill", player: b }).ok).toBe(false);
     expect(t.act(t.plain[1], "night_pick", { day: 1, action: "kill", player: victim }).ok).toBe(false);
-    for (const id of t.s.alive.filter((x) => x !== a && x !== b)) t.act(id, "night_pick", { day: 1, action: "guard", player: a });
+    for (const id of t.s.alive.filter((x) => x !== a && x !== b)) t.act(id, "night_pick", { day: 1, action: "suspect", player: a });
     t.act(a, "night_pick", { day: 1, action: "kill", player: victim });
     t.act(b, "night_pick", { day: 1, action: "silence", player: victim });
     expect(t.room.phase).toBe("night");
     expect(t.me(a).partnerPicks![b]).toMatchObject({ action: "silence" });
     t.act(b, "night_pick", { day: 1, action: "kill", player: victim });
+    // Everyone has chosen, but morning waits for the night clock.
+    expect(t.room.phase).toBe("night");
+    t.dawn();
     expect(t.room.phase).toBe("day");
     expect(t.s.morning).toEqual({ killed: victim, silenced: null, blackmail: false, guarded: null });
     expect(t.s.alive).not.toContain(victim);
@@ -199,7 +210,7 @@ describe("Ashworth Hall nights", () => {
 describe("Ashworth Hall guarding", () => {
   it("two guards on the victim stop the kill and the kill is not used up; one guard does not", () => {
     const t = new Table(make(7));
-    t.start(7, { murderers: 1, targets: 1, killsEach: 1 });
+    t.start(7, { murderers: 1, targets: 1, killsEach: 1, cards: { guard: true } });
     const [m] = t.murderers;
     const [victim, g1, g2, g3] = t.plain;
     const guests = t.s.alive.filter((id) => id !== m);
@@ -208,6 +219,7 @@ describe("Ashworth Hall guarding", () => {
     expect(t.act(g1, "night_pick", { day: 1, action: "suspect", player: m }).ok).toBe(false);
     for (const id of guests) t.act(id, "night_pick", { day: 1, action: "guard", player: id === g1 || id === g2 ? victim : id === victim ? g3 : m });
     t.act(m, "night_pick", { day: 1, action: "kill", player: victim });
+    t.dawn();
     expect(t.room.phase).toBe("day");
     expect(t.s.morning).toEqual({ killed: null, silenced: null, blackmail: false, guarded: victim });
     expect(t.s.alive).toContain(victim);
@@ -224,6 +236,7 @@ describe("Ashworth Hall guarding", () => {
     // Night 2: only one guard on the victim, so the kill goes through.
     for (const id of t.s.alive.filter((x) => x !== m)) t.act(id, "night_pick", { day: 2, action: "guard", player: id === g1 ? victim : id === victim ? g1 : m });
     t.act(m, "night_pick", { day: 2, action: "kill", player: victim });
+    t.dawn();
     expect(t.s.morning).toMatchObject({ killed: victim, guarded: null });
     expect(t.s.killsLeft).toBe(0);
   });
@@ -236,7 +249,31 @@ describe("Ashworth Hall guarding", () => {
     expect(t.act(t.plain[1], "night_pick", { day: 1, action: "guard", player: victim }).ok).toBe(false);
     for (const id of t.s.alive.filter((x) => x !== m)) t.act(id, "night_pick", { day: 1, action: "suspect", player: id === victim ? m : victim });
     t.act(m, "night_pick", { day: 1, action: "kill", player: victim });
+    t.dawn();
     expect(t.s.morning).toMatchObject({ killed: victim, guarded: null });
+  });
+
+  it("morning never comes before the night clock, and a late choice after the clock brings it at once", () => {
+    const t = new Table(make(6));
+    t.start(6, { murderers: 1, targets: 1 });
+    const [m] = t.murderers;
+    expect(t.room.phaseEndsAt).not.toBeNull();
+    for (const id of t.s.alive.filter((x) => x !== m)) t.act(id, "night_pick", { day: 1, action: "suspect", player: m === id ? t.plain[0] : m });
+    // The clock runs out while the murderer is still choosing: still night.
+    t.dawn();
+    expect(t.room.phase).toBe("night");
+    t.act(m, "night_pick", { day: 1, action: "nothing" });
+    expect(t.room.phase).toBe("day");
+    // A new night starts a new clock.
+    t.act("mum", "next", { day: 1 });
+    t.act("mum", "count_votes", { day: 1 });
+    const [p0, p1] = t.s.alive;
+    t.act(p0, "vote", { day: 1, player: p1 });
+    t.act(p1, "vote", { day: 1, player: p0 });
+    t.act("mum", "count_votes", { day: 1 });
+    t.act("mum", "next", { day: 1 });
+    expect(t.room.phase).toBe("night");
+    expect(Date.parse(t.room.phaseEndsAt!)).toBeGreaterThan(t.clock);
   });
 });
 

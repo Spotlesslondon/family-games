@@ -22,6 +22,7 @@ import { shuffle } from "@/engine/rng";
 import { accept, noop, reject, type GameContext, type GameModule, type PrivateMap, type TurnResult } from "@/engine/types";
 import {
   GUARDS_TO_SAVE,
+  NIGHT_SECONDS,
   MAX_PLAYERS,
   MIN_PLAYERS,
   POINTS_GUEST_WIN,
@@ -75,7 +76,8 @@ function startNight(s: MurderPublic, priv: PrivateMap, day: number): TurnResult 
     const m = mineOf(priv, id);
     rows[id] = row({ ...m, pick: null, partnerPicks: m.role === "murderer" ? {} : undefined, mustVote: null, vote: null, elect: null });
   }
-  return accept({ phase: "night", phaseEndsAt: null, state: pub(next), private: rows });
+  // No phaseEndsAt here: the engine starts the night clock from timerSeconds.
+  return accept({ phase: "night", state: pub(next), private: rows });
 }
 
 function winCheck(s: MurderPublic, priv: PrivateMap): MurderPublic {
@@ -239,7 +241,7 @@ export const murder: GameModule = {
   maxPlayers: MAX_PLAYERS,
   phases: {
     roles: { waitsFor: "host" },
-    night: { waitsFor: "all" },
+    night: { waitsFor: "all", timerSeconds: NIGHT_SECONDS },
     day: { waitsFor: "host" },
     election: { waitsFor: "all" },
     vote: { waitsFor: "all" },
@@ -337,7 +339,8 @@ export const murder: GameModule = {
         const ready = s.alive.filter((id) => mineOf(after, id).pick).length;
         const ms = aliveMurderers(s, after);
         const agree = ms.every((id) => samePick(mineOf(after, id).pick, mineOf(after, ms[0]).pick));
-        if (ready === s.alive.length && agree) return resolveNight(ctx, { ...s, nightReady: ready }, after);
+        const clockDone = !ctx.room.phaseEndsAt || Date.parse(ctx.now) >= Date.parse(ctx.room.phaseEndsAt);
+        if (ready === s.alive.length && agree && clockDone) return resolveNight(ctx, { ...s, nightReady: ready }, after);
         return accept({ state: pub({ ...s, nightReady: ready }), private: rows });
       }
 
@@ -423,8 +426,15 @@ export const murder: GameModule = {
     }
   },
 
-  onPhaseExpired() {
-    return noop();
+  onPhaseExpired(ctx) {
+    // The night clock has run out. Morning comes if everyone has chosen and the
+    // murderers agree; otherwise the last choice brings it.
+    if (ctx.room.phase !== "night") return noop();
+    const s = st(ctx);
+    const ms = aliveMurderers(s, ctx.private);
+    const ready = s.alive.every((id) => mineOf(ctx.private, id).pick);
+    const agree = ms.every((id) => samePick(mineOf(ctx.private, id).pick, mineOf(ctx.private, ms[0]).pick));
+    return ready && agree ? resolveNight(ctx, s, ctx.private) : noop();
   },
 
   isComplete(state) {

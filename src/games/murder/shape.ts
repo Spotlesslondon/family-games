@@ -9,6 +9,8 @@ export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 12;
 /** Guards needed on one player to stop a kill (Joshua, 22 Nov 13:35: guests need a reason to tap at night). */
 export const GUARDS_TO_SAVE = 2;
+/** The shortest night. Morning cannot come sooner, so the murderers are not the only ones still looking at their phones (Joshua, 22 Nov 13:42). */
+export const NIGHT_SECONDS = 20;
 export const POINTS_MURDERER_WIN = 5;
 export const POINTS_GUEST_WIN = 3;
 
@@ -120,6 +122,6 @@ export function defaultSettings(n: number): MurderSettings {
     murderers: m,
     targets: m,
     killsEach: 1,
-    cards: { kill: true, silence: true, blackmail: true, pardon: true, showdown: false, guard: true },
+    cards: { kill: true, silence: true, blackmail: true, pardon: true, showdown: false, guard: false },
   };
 }

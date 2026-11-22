@@ -7,6 +7,7 @@
 // Copy is a tech lead draft for the CEO seat to rewrite.
 
 import { useEffect, useState } from "react";
+import { useServerOffset } from "@/lib/client/clock";
 import { message } from "@/lib/client/session";
 import { GUARDS_TO_SAVE, type MurderMine, type MurderPublic, type MurderSettings, type NightPick, type VoteDay } from "@/games/murder/shape";
 import { THEMES, art, cap, themeOf, type ThemeKey, type ThemeWords } from "@/games/murder/themes";
@@ -79,6 +80,32 @@ function Grid({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/** The night clock. Every phone shows it, and morning cannot come before it ends, so the
+ * murderers are not the only ones still looking at their phones. */
+function NightClock({ endsAt, fire }: { endsAt: string | null; fire: () => unknown }) {
+  const offset = useServerOffset();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
+  const left = endsAt ? Math.max(0, Math.ceil((Date.parse(endsAt) - (now + offset)) / 1000)) : 0;
+  const due = left === 0;
+  useEffect(() => {
+    if (!due || !endsAt) return;
+    fire();
+    const id = setInterval(fire, 2000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [due, endsAt]);
+  return (
+    <div className="flex items-center justify-between rounded-2xl border-2 border-ink bg-surface px-4 py-2" role="timer" aria-live="off">
+      <span className="font-bold">{due ? "Waiting for the last choices" : "Eyes on your phone until morning"}</span>
+      {!due && <span className="font-display text-3xl font-bold tabular-nums">0:{String(left).padStart(2, "0")}</span>}
     </div>
   );
 }
@@ -188,7 +215,9 @@ export function MurderPlay({
   hostId,
   people,
   act,
+  phaseEndsAt = null,
 }: {
+  phaseEndsAt?: string | null;
   phase: string;
   state: MurderPublic;
   mine: MurderMine | null;
@@ -274,7 +303,8 @@ export function MurderPlay({
           <Emblem theme={w.key} size={44} />
           <h2 className="font-display text-3xl font-bold leading-tight">{w.nightTitle}</h2>
         </div>
-        <p className="text-lg">Everyone looks at their phone and makes a choice. Keep your screen to yourself.</p>
+        <p className="text-lg">Everyone looks at their phone and makes a choice. Keep your screen to yourself, and keep looking until morning.</p>
+        {alive && <NightClock endsAt={phaseEndsAt} fire={() => act("advance_if_expired")} />}
         {!alive ? (
           <p className="card px-4 py-4 text-lg">You are out of the game. Stay at the table and watch {w.house}.</p>
         ) : murderer ? (
@@ -354,9 +384,11 @@ export function MurderPlay({
             )}
           </div>
         )}
-        <p className="text-center text-muted">
-          {s.nightReady} of {s.alive.length} ready
-        </p>
+        {isHost && (
+          <p className="text-center text-muted">
+            {s.nightReady} of {s.alive.length} ready
+          </p>
+        )}
         {errorLine}
         {isHost && (
           <button type="button" disabled={busy} onClick={() => go("end_night", { day: s.day })} className={`${small} mt-auto`}>
