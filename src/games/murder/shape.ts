@@ -9,8 +9,9 @@ export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 12;
 /** Guards needed on one player to stop a kill (Joshua, 22 Nov 13:35: guests need a reason to tap at night). */
 export const GUARDS_TO_SAVE = 2;
-/** The shortest night. Morning cannot come sooner, so the murderers are not the only ones still looking at their phones (Joshua, 22 Nov 13:42). */
-export const NIGHT_SECONDS = 40;
+// No timers in this game (Joshua, 22 Nov 18:42): night and day move on when more
+// than half the players still in have pressed ready (and, at night, the
+// murderers have agreed). How long each took is logged for the table test.
 
 /** Night messages (Joshua, 22 Nov 14:05): named, ready-made lines only, so every
  * phone is busy at night and nobody can type free text to anyone else. A line
@@ -87,8 +88,13 @@ export interface MurderPublic {
   alive: string[];
   departed: Departure[];
   day: number;
-  /** How many phones have made tonight's choice. Names are not shown: the last to tap could be a murderer. */
+  /** How many phones have made tonight's choice. Shown to the host only. */
   nightReady: number;
+  /** Who has pressed "ready" in this night or day. Everyone has the button, murderers included. */
+  ready: string[];
+  phaseStartedAt: string | null;
+  /** How long each night and day took, for the table test. */
+  timings: { phase: "night" | "day"; day: number; seconds: number }[];
   killsLeft: number;
   /** What the morning brought. */
   morning: { killed: string | null; silenced: string | null; blackmail: boolean; guarded?: string | null } | null;

@@ -7,7 +7,6 @@
 // Copy is a tech lead draft for the CEO seat to rewrite.
 
 import { useEffect, useState } from "react";
-import { useServerOffset } from "@/lib/client/clock";
 import { message } from "@/lib/client/session";
 import { GUARDS_TO_SAVE, MAX_MESSAGES_PER_NIGHT, QUICK_LINES, type Whisper, type MurderMine, type MurderPublic, type MurderSettings, type NightPick, type VoteDay } from "@/games/murder/shape";
 import { THEMES, art, cap, themeOf, type ThemeKey, type ThemeWords } from "@/games/murder/themes";
@@ -84,28 +83,26 @@ function Grid({
   );
 }
 
-/** The night clock. Every phone shows it, and morning cannot come before it ends, so the
- * murderers are not the only ones still looking at their phones. */
-function NightClock({ endsAt, fire }: { endsAt: string | null; fire: () => unknown }) {
-  const offset = useServerOffset();
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(id);
-  }, []);
-  const left = endsAt ? Math.max(0, Math.ceil((Date.parse(endsAt) - (now + offset)) / 1000)) : 0;
-  const due = left === 0;
-  useEffect(() => {
-    if (!due || !endsAt) return;
-    fire();
-    const id = setInterval(fire, 2000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [due, endsAt]);
+/** "Ready for morning" / "Ready to vote". Everyone has it, murderers included, so pressing it
+ * gives nothing away. The game moves on when more than half the players still in are ready. */
+function ReadyBar({ s, me, label, go, busy, waitingNote }: { s: MurderPublic; me: string; label: string; go: (type: string, payload?: Record<string, unknown>) => Promise<unknown>; busy: boolean; waitingNote?: string }) {
+  const ready = (s.ready ?? []).filter((id) => s.alive.includes(id));
+  const mine = ready.includes(me);
+  const need = Math.floor(s.alive.length / 2) + 1;
   return (
-    <div className="flex items-center justify-between rounded-2xl border-2 border-ink bg-surface px-4 py-2" role="timer" aria-live="off">
-      <span className="font-bold">{due ? "Waiting for the last choices" : "Eyes on your phone until morning"}</span>
-      {!due && <span className="font-display text-3xl font-bold tabular-nums">0:{String(left).padStart(2, "0")}</span>}
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        aria-pressed={mine}
+        disabled={busy}
+        onClick={() => go("ready", { day: s.day, ready: !mine })}
+        className={`btn h-16 w-full font-display text-2xl font-bold disabled:opacity-60 ${mine ? "btn-secondary" : "btn-primary text-ink"}`}
+      >
+        {mine ? "Not ready yet" : label}
+      </button>
+      <p className="text-center text-muted">
+        {ready.length} of {s.alive.length} ready. Moves on at {need}.{ready.length >= need && waitingNote ? ` ${waitingNote}` : ""}
+      </p>
     </div>
   );
 }
@@ -312,9 +309,7 @@ export function MurderPlay({
   hostId,
   people,
   act,
-  phaseEndsAt = null,
 }: {
-  phaseEndsAt?: string | null;
   phase: string;
   state: MurderPublic;
   mine: MurderMine | null;
@@ -400,8 +395,7 @@ export function MurderPlay({
           <Emblem theme={w.key} size={44} />
           <h2 className="font-display text-3xl font-bold leading-tight">{w.nightTitle}</h2>
         </div>
-        <p className="text-lg">Everyone makes a choice and can send messages. Keep your screen to yourself, and keep looking until morning.</p>
-        {alive && <NightClock endsAt={phaseEndsAt} fire={() => act("advance_if_expired")} />}
+        <p className="text-lg">Everyone makes a choice and can send messages. Keep your screen to yourself. Morning comes when more than half of you are ready.</p>
         {!alive ? (
           <p className="card px-4 py-4 text-lg">You are out of the game. Stay at the table and watch {w.house}.</p>
         ) : murderer ? (
@@ -482,6 +476,7 @@ export function MurderPlay({
           </div>
         )}
         {alive && <Messages s={s} mine={mine} me={me} people={people} name={name} go={go} busy={busy} />}
+        {alive && <ReadyBar s={s} me={me} label="Ready for morning" go={go} busy={busy} waitingNote="Waiting for the last choices." />}
         {isHost && (
           <p className="text-center text-muted">
             {s.nightReady} of {s.alive.length} ready
@@ -569,14 +564,16 @@ export function MurderPlay({
         <House s={s} people={people} me={me} />
         <PastVotes votes={s.votes} name={name} w={w} />
         {errorLine}
-        {phase === "day" &&
-          (isHost ? (
-            <button type="button" disabled={busy || !!s.passing} onClick={() => go("next", { day: s.day })} className={`${primary} mt-auto`}>
-              {needsElection ? `Elect a holder for ${guestCardName(s.settings)}` : "Time to vote"}
-            </button>
-          ) : (
-            <p className="mt-auto text-center text-muted">{hostName} starts the vote.</p>
-          ))}
+        {phase === "day" && alive && (
+          <div className="mt-auto">
+            <ReadyBar s={s} me={me} label={needsElection ? "Ready to elect" : "Ready to vote"} go={go} busy={busy} waitingNote={s.passing ? "Waiting for the card to be handed on." : undefined} />
+          </div>
+        )}
+        {phase === "day" && isHost && (
+          <button type="button" disabled={busy || !!s.passing} onClick={() => go("next", { day: s.day })} className={small}>
+            Host: {needsElection ? "start the election" : "start the vote"} now
+          </button>
+        )}
       </section>
     );
   }
@@ -780,6 +777,19 @@ export function MurderResults({ state: s, me, hostId, people, act }: { state: Mu
         ))}
       </div>
       <PastVotes votes={s.votes} name={name} w={w} />
+      {(s.timings ?? []).length > 0 && (
+        <p className="text-sm text-muted">
+          {(["night", "day"] as const)
+            .map((ph) => {
+              const t = (s.timings ?? []).filter((x) => x.phase === ph);
+              if (!t.length) return null;
+              const avg = Math.round(t.reduce((n, x) => n + x.seconds, 0) / t.length);
+              return `Average ${ph}: ${Math.floor(avg / 60)}m ${avg % 60}s`;
+            })
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
       {me === hostId ? (
         <div className="mt-auto flex flex-col gap-3">
           <button type="button" disabled={busy} onClick={() => go("start_game", { gameId: "murder", options: { ...s.settings } })} className={primary}>

@@ -450,7 +450,6 @@ export function Lobby() {
               phase={room.phase}
               state={room.state as unknown as MurderPublic}
               mine={mine && "role" in mine ? (mine as unknown as MurderMine) : null}
-              phaseEndsAt={room.phase_ends_at ?? null}
               me={session.member.id}
               hostId={controlId}
               people={people}

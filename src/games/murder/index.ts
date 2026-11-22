@@ -23,7 +23,6 @@ import { accept, noop, reject, type GameContext, type GameModule, type PrivateMa
 import {
   GUARDS_TO_SAVE,
   MAX_MESSAGES_PER_NIGHT,
-  NIGHT_SECONDS,
   QUICK_LINES,
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -70,16 +69,29 @@ function aliveMurderers(s: MurderPublic, priv: PrivateMap) {
   return s.alive.filter((id) => isMurderer(priv, id));
 }
 
+const secondsSince = (from: string | null, now: string) => (from ? Math.max(0, Math.round((Date.parse(now) - Date.parse(from)) / 1000)) : null);
+const logTime = (s: MurderPublic, phase: "night" | "day", now: string): MurderPublic["timings"] => {
+  const seconds = secondsSince(s.phaseStartedAt, now);
+  return seconds === null ? s.timings ?? [] : [...(s.timings ?? []), { phase, day: s.day, seconds }];
+};
+const majority = (s: MurderPublic) => (s.ready ?? []).filter((id) => s.alive.includes(id)).length * 2 > s.alive.length;
+
+/** Morning comes when the murderers have agreed and more than half the players still in are ready. */
+function canDawn(s: MurderPublic, priv: PrivateMap) {
+  const ms = aliveMurderers(s, priv);
+  const first = mineOf(priv, ms[0]).pick;
+  return ms.every((id) => samePick(mineOf(priv, id).pick, first)) && majority(s);
+}
+
 /** Start a night: clear yesterday's choices, votes and blackmail. */
-function startNight(s: MurderPublic, priv: PrivateMap, day: number): TurnResult {
-  const next: MurderPublic = { ...s, day, nightReady: 0, morning: null, silenced: null, blackmailToday: false, voted: [] };
+function startNight(s: MurderPublic, priv: PrivateMap, day: number, now: string): TurnResult {
+  const next: MurderPublic = { ...s, day, nightReady: 0, morning: null, silenced: null, blackmailToday: false, voted: [], ready: [], phaseStartedAt: now };
   const rows: PrivateMap = {};
   for (const id of s.team) {
     const m = mineOf(priv, id);
     rows[id] = row({ ...m, pick: null, partnerPicks: m.role === "murderer" ? {} : undefined, mustVote: null, vote: null, elect: null });
   }
-  // No phaseEndsAt here: the engine starts the night clock from timerSeconds.
-  return accept({ phase: "night", state: pub(next), private: rows });
+  return accept({ phase: "night", phaseEndsAt: null, state: pub(next), private: rows });
 }
 
 function winCheck(s: MurderPublic, priv: PrivateMap): MurderPublic {
@@ -134,7 +146,7 @@ function resolveNight(ctx: GameContext, s: MurderPublic, priv: PrivateMap): Turn
       rows[agreed.player] = row({ ...(rows[agreed.player] as unknown as MurderMine), mustVote: agreed.voteFor });
     }
   }
-  next = winCheck({ ...next, morning, nightReady: 0 }, priv);
+  next = winCheck({ ...next, morning, nightReady: 0, ready: [], timings: logTime(s, "night", ctx.now), phaseStartedAt: ctx.now }, priv);
   return accept({ phase: next.winner ? "reveal" : "day", phaseEndsAt: null, state: pub(next), private: rows });
 }
 
@@ -208,9 +220,9 @@ function settle(s: MurderPublic, priv: PrivateMap, rows: PrivateMap | undefined,
   return accept({ phase: "reveal", phaseEndsAt: null, state: pub(next), ...(rows ? { private: rows } : {}) });
 }
 
-function openVote(s: MurderPublic, showdown: VoteDay["showdown"]): TurnResult {
+function openVote(s: MurderPublic, showdown: VoteDay["showdown"], now: string): TurnResult {
   const day: VoteDay = { day: s.day, showdown, entries: [], out: null, pardoned: false, role: null, target: false, blackmail: s.blackmailToday };
-  return accept({ phase: "vote", phaseEndsAt: null, state: pub({ ...s, voted: [], votes: [...s.votes, day] }) });
+  return accept({ phase: "vote", phaseEndsAt: null, state: pub({ ...s, voted: [], ready: [], votes: [...s.votes, day], timings: logTime(s, "day", now), phaseStartedAt: null }) });
 }
 
 function settleElection(ctx: GameContext, s: MurderPublic, priv: PrivateMap): TurnResult {
@@ -233,7 +245,7 @@ function settleElection(ctx: GameContext, s: MurderPublic, priv: PrivateMap): Tu
   const top = ranked.length ? count[ranked[0]] : 0;
   const tied = ranked.filter((k) => count[k] === top);
   const holder = tied.length ? tied[Math.floor(ctx.rng() * tied.length)] : null;
-  return accept({ phase: "day", phaseEndsAt: null, state: pub({ ...s, election: null, electionDone: true, cardHolder: holder }), private: rows });
+  return accept({ phase: "day", phaseEndsAt: null, state: pub({ ...s, election: null, electionDone: true, cardHolder: holder, ready: [] }), private: rows });
 }
 
 export const murder: GameModule = {
@@ -243,7 +255,7 @@ export const murder: GameModule = {
   maxPlayers: MAX_PLAYERS,
   phases: {
     roles: { waitsFor: "host" },
-    night: { waitsFor: "all", timerSeconds: NIGHT_SECONDS },
+    night: { waitsFor: "all" },
     day: { waitsFor: "host" },
     election: { waitsFor: "all" },
     vote: { waitsFor: "all" },
@@ -274,6 +286,9 @@ export const murder: GameModule = {
       departed: [],
       day: 0,
       nightReady: 0,
+      ready: [],
+      phaseStartedAt: null,
+      timings: [],
       killsLeft: settings.cards.kill ? settings.killsEach * settings.murderers : 0,
       morning: null,
       silenced: null,
@@ -309,18 +324,18 @@ export const murder: GameModule = {
       case "next": {
         if (!isHost) return reject("host_only");
         if (payload.day !== s.day) return noop();
-        if (phase === "roles") return startNight(s, priv, 1);
+        if (phase === "roles") return startNight(s, priv, 1, ctx.now);
         if (phase === "day") {
           if (s.passing) return reject("waiting_for_pass");
           if (guestCards && !s.electionDone && s.day >= 2) {
             return accept({ phase: "election", phaseEndsAt: null, state: pub({ ...s, election: { round: 1, candidates: null, voted: [], firstRound: null } }) });
           }
-          return openVote(s, null);
+          return openVote(s, null, ctx.now);
         }
         if (phase === "reveal") {
           if (s.winner) return accept({ state: pub({ ...s, finished: true }) });
           if (s.passing) return reject("waiting_for_pass");
-          return startNight(s, priv, s.day + 1);
+          return startNight(s, priv, s.day + 1, ctx.now);
         }
         return noop();
       }
@@ -339,10 +354,7 @@ export const murder: GameModule = {
         }
         const after: PrivateMap = { ...priv, ...rows };
         const ready = s.alive.filter((id) => mineOf(after, id).pick).length;
-        const ms = aliveMurderers(s, after);
-        const agree = ms.every((id) => samePick(mineOf(after, id).pick, mineOf(after, ms[0]).pick));
-        const clockDone = !ctx.room.phaseEndsAt || Date.parse(ctx.now) >= Date.parse(ctx.room.phaseEndsAt);
-        if (ready === s.alive.length && agree && clockDone) return resolveNight(ctx, { ...s, nightReady: ready }, after);
+        if (canDawn(s, after)) return resolveNight(ctx, { ...s, nightReady: ready }, after);
         return accept({ state: pub({ ...s, nightReady: ready }), private: rows });
       }
 
@@ -369,6 +381,27 @@ export const murder: GameModule = {
             [to]: row({ ...them, inbox: [...(them.inbox ?? []), w] }),
           },
         });
+      }
+
+      case "ready": {
+        // "Ready for morning" / "Ready to vote". Everyone has the button, so pressing it gives nothing away.
+        if ((phase !== "night" && phase !== "day") || payload.day !== s.day) return noop();
+        if (!s.alive.includes(actor)) return reject("not_playing");
+        const on = payload.ready !== false;
+        const was = s.ready ?? [];
+        const ready = on ? (was.includes(actor) ? was : [...was, actor]) : was.filter((x) => x !== actor);
+        const next: MurderPublic = { ...s, ready };
+        if (phase === "night") {
+          if (canDawn(next, priv)) return resolveNight(ctx, next, priv);
+          return accept({ state: pub(next) });
+        }
+        if (majority(next) && !s.passing) {
+          if (guestCards && !s.electionDone && s.day >= 2) {
+            return accept({ phase: "election", phaseEndsAt: null, state: pub({ ...next, ready: [], election: { round: 1, candidates: null, voted: [], firstRound: null } }) });
+          }
+          return openVote(next, null, ctx.now);
+        }
+        return accept({ state: pub(next) });
       }
 
       case "end_night": {
@@ -406,7 +439,7 @@ export const murder: GameModule = {
         if (s.passing) return reject("waiting_for_pass");
         const player = payload.player;
         if (typeof player !== "string" || !s.alive.includes(player) || player === actor) return reject("unknown_player");
-        return openVote({ ...s, showdownUsed: true }, { caller: actor, opponent: player });
+        return openVote({ ...s, showdownUsed: true }, { caller: actor, opponent: player }, ctx.now);
       }
 
       case "vote": {
@@ -453,15 +486,8 @@ export const murder: GameModule = {
     }
   },
 
-  onPhaseExpired(ctx) {
-    // The night clock has run out. Morning comes if everyone has chosen and the
-    // murderers agree; otherwise the last choice brings it.
-    if (ctx.room.phase !== "night") return noop();
-    const s = st(ctx);
-    const ms = aliveMurderers(s, ctx.private);
-    const ready = s.alive.every((id) => mineOf(ctx.private, id).pick);
-    const agree = ms.every((id) => samePick(mineOf(ctx.private, id).pick, mineOf(ctx.private, ms[0]).pick));
-    return ready && agree ? resolveNight(ctx, s, ctx.private) : noop();
+  onPhaseExpired() {
+    return noop();
   },
 
   isComplete(state) {

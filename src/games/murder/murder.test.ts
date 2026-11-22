@@ -54,10 +54,11 @@ class Table {
     expect(this.room.phase).toBe("night");
     return n;
   }
-  /** The night clock runs out and a phone nudges the server. */
+  /** Everyone still in presses "Ready for morning". */
   dawn() {
     this.clock += 60_000;
-    return this.act("mum", "advance_if_expired");
+    const day = this.s.day;
+    for (const id of this.s.alive) if (this.room.phase === "night") this.act(id, "ready", { day });
   }
   /** Everyone makes a night choice; the murderers all choose `pick`; then the night clock runs out. */
   night(pick: Record<string, unknown>) {
@@ -253,27 +254,48 @@ describe("Ashworth Hall guarding", () => {
     expect(t.s.morning).toMatchObject({ killed: victim, guarded: null });
   });
 
-  it("morning never comes before the night clock, and a late choice after the clock brings it at once", () => {
+  it("moves on when more than half are ready (and the murderers agree), with no timer, and logs how long each took", () => {
     const t = new Table(make(6));
-    t.start(6, { murderers: 1, targets: 1 });
-    const [m] = t.murderers;
-    expect(t.room.phaseEndsAt).not.toBeNull();
-    for (const id of t.s.alive.filter((x) => x !== m)) t.act(id, "night_pick", { day: 1, action: "suspect", player: m === id ? t.plain[0] : m });
-    // The clock runs out while the murderer is still choosing: still night.
-    t.dawn();
+    t.start(6, { murderers: 2, targets: 1 });
+    const [a, b] = t.murderers;
+    const guests = t.s.alive.filter((x) => x !== a && x !== b);
+    expect(t.room.phaseEndsAt).toBeNull();
+    // Murderers disagree, and everyone is ready: still night.
+    t.act(a, "night_pick", { day: 1, action: "nothing" });
+    t.act(b, "night_pick", { day: 1, action: "silence", player: guests[0] });
+    t.clock += 95_000;
+    for (const id of t.s.alive) t.act(id, "ready", { day: 1 });
     expect(t.room.phase).toBe("night");
-    t.act(m, "night_pick", { day: 1, action: "nothing" });
+    // They agree: morning comes at once, and the night's length is logged.
+    t.act(b, "night_pick", { day: 1, action: "nothing" });
     expect(t.room.phase).toBe("day");
-    // A new night starts a new clock.
-    t.act("mum", "next", { day: 1 });
-    t.act("mum", "count_votes", { day: 1 });
+    expect(t.s.timings).toEqual([{ phase: "night", day: 1, seconds: 95 }]);
+    // Day: exactly half ready is not enough; one more opens the vote.
+    t.clock += 240_000;
+    for (const id of t.s.alive.slice(0, 3)) t.act(id, "ready", { day: 1 });
+    expect(t.room.phase).toBe("day");
+    // Pressing again takes it back.
+    t.act(t.s.alive[0], "ready", { day: 1, ready: false });
+    expect(t.s.ready.length).toBe(2);
+    t.act(t.s.alive[0], "ready", { day: 1 });
+    t.act(t.s.alive[3], "ready", { day: 1 });
+    expect(t.room.phase).toBe("vote");
+    expect(t.s.timings[1]).toEqual({ phase: "day", day: 1, seconds: 240 });
+    expect(t.s.ready).toEqual([]);
+    // Night 2: murderers agree first, then the majority readies.
     const [p0, p1] = t.s.alive;
     t.act(p0, "vote", { day: 1, player: p1 });
     t.act(p1, "vote", { day: 1, player: p0 });
     t.act("mum", "count_votes", { day: 1 });
     t.act("mum", "next", { day: 1 });
     expect(t.room.phase).toBe("night");
-    expect(Date.parse(t.room.phaseEndsAt!)).toBeGreaterThan(t.clock);
+    t.act(a, "night_pick", { day: 2, action: "nothing" });
+    t.act(b, "night_pick", { day: 2, action: "nothing" });
+    expect(t.room.phase).toBe("night");
+    for (const id of t.s.alive.slice(0, 4)) t.act(id, "ready", { day: 2 });
+    expect(t.room.phase).toBe("day");
+    // Players who are out cannot press ready.
+    expect(t.act("mum", "ready", { day: 2 }).ok === false || t.s.alive.includes("mum")).toBe(true);
   });
 });
 
