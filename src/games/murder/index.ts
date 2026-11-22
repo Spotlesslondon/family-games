@@ -21,6 +21,7 @@ import { registerGame } from "@/engine/registry";
 import { shuffle } from "@/engine/rng";
 import { accept, noop, reject, type GameContext, type GameModule, type PrivateMap, type TurnResult } from "@/engine/types";
 import {
+  GUARDS_TO_SAVE,
   MAX_PLAYERS,
   MIN_PLAYERS,
   POINTS_GUEST_WIN,
@@ -100,13 +101,20 @@ function resolveNight(ctx: GameContext, s: MurderPublic, priv: PrivateMap): Turn
   const picks = ms.map((id) => mineOf(priv, id).pick);
   const agreed = picks.length > 0 && picks.every((p) => samePick(p, picks[0])) ? picks[0]! : null;
   let next: MurderPublic = { ...s };
-  const morning: NonNullable<MurderPublic["morning"]> = { killed: null, silenced: null, blackmail: false };
+  const morning: NonNullable<MurderPublic["morning"]> = { killed: null, silenced: null, blackmail: false, guarded: null };
   const rows: PrivateMap = {};
   for (const id of s.team) {
     const m = mineOf(priv, id);
     rows[id] = row({ ...m, pick: null, partnerPicks: m.role === "murderer" ? {} : undefined, mustVote: null });
   }
-  if (agreed && agreed.player) {
+  const guards =
+    agreed?.action === "kill" && s.settings.cards.guard
+      ? s.alive.filter((id) => !isMurderer(priv, id) && samePick(mineOf(priv, id).pick, { action: "guard", player: agreed.player })).length
+      : 0;
+  if (agreed && agreed.player && agreed.action === "kill" && guards >= GUARDS_TO_SAVE) {
+    // The guards stood firm: nobody dies, and the kill is not used up.
+    morning.guarded = agreed.player;
+  } else if (agreed && agreed.player) {
     if (agreed.action === "kill") {
       next.alive = next.alive.filter((x) => x !== agreed.player);
       next.departed = [...next.departed, { id: agreed.player, how: "killed", day: s.day, role: "guest" }];
@@ -132,8 +140,10 @@ function validPick(s: MurderPublic, priv: PrivateMap, actor: string, payload: Re
   const voteFor = typeof payload.voteFor === "string" ? payload.voteFor : null;
   const alive = (id: string | null) => !!id && s.alive.includes(id);
   if (!isMurderer(priv, actor)) {
-    if (action !== "suspect" || !alive(player) || player === actor) return "bad_choice";
-    return { action: "suspect", player };
+    if (!alive(player) || player === actor) return "bad_choice";
+    if (action === "guard" && s.settings.cards.guard) return { action: "guard", player };
+    if (action === "suspect" && !s.settings.cards.guard) return { action: "suspect", player };
+    return "bad_choice";
   }
   const me = mineOf(priv, actor);
   if (action === "nothing") return { action: "nothing", player: null };

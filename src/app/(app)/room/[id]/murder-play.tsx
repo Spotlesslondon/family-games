@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from "react";
 import { message } from "@/lib/client/session";
-import type { MurderMine, MurderPublic, MurderSettings, NightPick, VoteDay } from "@/games/murder/shape";
+import { GUARDS_TO_SAVE, type MurderMine, type MurderPublic, type MurderSettings, type NightPick, type VoteDay } from "@/games/murder/shape";
 import { THEMES, art, cap, themeOf, type ThemeKey, type ThemeWords } from "@/games/murder/themes";
 import { Avatar, type Person } from "./mr-white-play";
 import { Emblem, useThemeBackdrop } from "./frame-art";
@@ -332,12 +332,26 @@ export function MurderPlay({
           </div>
         ) : (
           <div className="card flex flex-col gap-3 px-4 py-4">
-            <span className="text-xs font-bold tracking-widest text-muted">WHO DO YOU SUSPECT?</span>
+            <span className="text-xs font-bold tracking-widest text-muted">{(s.settings.cards.guard ? w.guard : "Who do you suspect?").toUpperCase()}</span>
+            {s.settings.cards.guard && (
+              <p>
+                {w.guardQuestion} If {GUARDS_TO_SAVE} of you choose the same player, the {w.bads} cannot use {w.kill} on them tonight.
+              </p>
+            )}
             <Grid ids={s.alive.filter((x) => x !== me)} people={people} me={me} pick={pick ?? myPick?.player ?? null} onPick={setPick} />
-            <button type="button" disabled={busy || !pick} onClick={() => go("night_pick", { day: s.day, action: "suspect", player: pick })} className={secondary}>
+            <button
+              type="button"
+              disabled={busy || !pick}
+              onClick={() => go("night_pick", { day: s.day, action: s.settings.cards.guard ? "guard" : "suspect", player: pick })}
+              className={secondary}
+            >
               {myPick ? "Change my choice" : "Choose"}
             </button>
-            {myPick && <p>You suspect {name(myPick.player ?? "")}. Only you can see this.</p>}
+            {myPick && (
+              <p>
+                {s.settings.cards.guard ? `You are guarding ${name(myPick.player ?? "")}.` : `You suspect ${name(myPick.player ?? "")}.`} Only you can see this.
+              </p>
+            )}
           </div>
         )}
         <p className="text-center text-muted">
@@ -369,13 +383,14 @@ export function MurderPlay({
         {m && phase === "day" && (
           <div className="card flex flex-col gap-2 px-5 py-4 text-lg">
             {m.killed && <p className="font-bold">{w.killed(name(m.killed), m.killed === me)}</p>}
+            {m.guarded && <p className="font-bold">{w.saved(name(m.guarded), m.guarded === me)}</p>}
             {m.silenced && (
               <p className="font-bold">
                 {w.silenced(name(m.silenced), m.silenced === me)} {m.silenced === me ? "You" : "They"} can still vote.
               </p>
             )}
             {m.blackmail && <p className="font-bold">{w.blackmailed}</p>}
-            {!m.killed && !m.silenced && !m.blackmail && <p className="font-bold">{w.quietNight}</p>}
+            {!m.killed && !m.guarded && !m.silenced && !m.blackmail && <p className="font-bold">{w.quietNight}</p>}
           </div>
         )}
         <Secret mine={mine} s={s} name={name} />
@@ -707,9 +722,10 @@ export function MurderSettingsPanel({ value, onChange, players, check }: { value
       {toggle("kill", w.kill, `Remove ${art(w.good)} at night. Limited.`)}
       {toggle("silence", w.silence, "One player cannot talk for a day.")}
       {toggle("blackmail", w.blackmail, `Force one ${w.good}'s vote. Everyone knows a vote was forced, not whose.`)}
-      <span className="px-3 pt-2 text-xs font-bold tracking-widest text-muted">{w.good.toUpperCase()} CARD, ELECTED ON DAY 2</span>
-      {toggle("pardon", w.pardon, `Once, cancel the vote of ${w.house}.`)}
-      {toggle("showdown", w.showdown, "Once, the vote is only between the holder and one player.")}
+      <span className="px-3 pt-2 text-xs font-bold tracking-widest text-muted">{w.good.toUpperCase()} CARDS</span>
+      {toggle("guard", w.guard, `Every night each ${w.good} protects someone. ${GUARDS_TO_SAVE} on the same player stop a ${w.kill.toLowerCase()}.`)}
+      {toggle("pardon", w.pardon, `Held by a player elected on day 2. Once, cancel the vote of ${w.house}.`)}
+      {toggle("showdown", w.showdown, "Held by a player elected on day 2. Once, the vote is only between the holder and one player.")}
       {players >= 5 && !check.ok && <p className="px-3 font-bold text-alert">{check.reason}</p>}
       {check.ok && check.warning && <p className="px-3 font-bold">{check.warning}</p>}
     </div>

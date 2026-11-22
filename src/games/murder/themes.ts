@@ -25,6 +25,11 @@ export interface ThemeWords {
   blackmail: string;
   pardon: string;
   showdown: string;
+  /** The guests' night choice: who they protect. */
+  guard: string;
+  guardQuestion: string;
+  /** "Someone tried to kill X. The guards stopped it." */
+  saved: (who: string, you: boolean) => string;
   /** "X was found dead in the library." */
   killed: (who: string, you: boolean) => string;
   silenced: (who: string, you: boolean) => string;
@@ -58,6 +63,9 @@ export const THEMES: Record<ThemeKey, ThemeWords> = {
     blackmail: "Blackmail",
     pardon: "Pardon",
     showdown: "Showdown",
+    guard: "Stand guard",
+    guardQuestion: "Who will you stand guard over tonight?",
+    saved: (w) => `Someone tried to kill ${w} in the night. The guards stopped it.`,
     killed: (w, you) => `${w} ${you ? "were" : "was"} found dead in the library.`,
     silenced: (w, you) => `${w} ${you ? "have" : "has"} been silenced. No talking today.`,
     blackmailed: "One vote today is blackmailed.",
@@ -85,6 +93,9 @@ export const THEMES: Record<ThemeKey, ThemeWords> = {
     blackmail: "Enchant",
     pardon: "Counter-spell",
     showdown: "Duel",
+    guard: "Ward",
+    guardQuestion: "Who will you protect with a ward tonight?",
+    saved: (w) => `A curse was cast at ${w} in the night. The wards held.`,
     killed: (w, you) => `${w} ${you ? "were" : "was"} turned to stone in the night.`,
     silenced: (w, you) => `${w} ${you ? "are" : "is"} under a Hex of Silence. Not a word today.`,
     blackmailed: "One vote today is enchanted.",
@@ -112,6 +123,9 @@ export const THEMES: Record<ThemeKey, ThemeWords> = {
     blackmail: "Leverage",
     pardon: "Clearance",
     showdown: "Interrogation",
+    guard: "Protective detail",
+    guardQuestion: "Who gets your protective detail tonight?",
+    saved: (w) => `Someone tried to take ${w} off the case. The protective detail stopped it.`,
     killed: (w, you) => `${w} ${you ? "were" : "was"} taken off the case overnight.`,
     silenced: (w, you) => `${w} ${you ? "are" : "is"} under a gag order. No talking today.`,
     blackmailed: "One vote today is under leverage.",
@@ -139,6 +153,9 @@ export const THEMES: Record<ThemeKey, ThemeWords> = {
     blackmail: "Threaten",
     pardon: "Mercy",
     showdown: "Trial by Combat",
+    guard: "Keep watch",
+    guardQuestion: "Who will you keep watch over tonight?",
+    saved: (w, you) => `${w} ${you ? "were" : "was"} nearly ambushed in the night. The watch drove the traitors off.`,
     killed: (w, you) => `${w} ${you ? "were" : "was"} ambushed in the night and is out of the fight.`,
     silenced: (w, you) => `${w} ${you ? "are" : "is"} under a Vow of Silence. Not a word today.`,
     blackmailed: "One vote today is threatened.",

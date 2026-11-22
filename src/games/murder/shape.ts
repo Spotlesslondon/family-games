@@ -7,10 +7,12 @@ import type { ThemeKey } from "./themes";
 
 export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 12;
+/** Guards needed on one player to stop a kill (Joshua, 22 Nov 13:35: guests need a reason to tap at night). */
+export const GUARDS_TO_SAVE = 2;
 export const POINTS_MURDERER_WIN = 5;
 export const POINTS_GUEST_WIN = 3;
 
-export type CardKey = "kill" | "silence" | "blackmail" | "pardon" | "showdown";
+export type CardKey = "kill" | "silence" | "blackmail" | "pardon" | "showdown" | "guard";
 export const MURDERER_CARDS: CardKey[] = ["kill", "silence", "blackmail"];
 export const GUEST_CARDS: CardKey[] = ["pardon", "showdown"];
 
@@ -24,9 +26,9 @@ export interface MurderSettings {
   cards: Record<CardKey, boolean>;
 }
 
-/** A night choice. Guests make one too (a suspect), so every phone is busy at night. */
+/** A night choice. Guests make one too (who they guard), so every phone is busy at night and every guest has a reason to choose. */
 export interface NightPick {
-  action: "kill" | "silence" | "blackmail" | "nothing" | "suspect";
+  action: "kill" | "silence" | "blackmail" | "nothing" | "suspect" | "guard";
   player: string | null;
   /** Blackmail only: who the blackmailed guest must vote for tomorrow. */
   voteFor?: string | null;
@@ -62,7 +64,7 @@ export interface MurderPublic {
   nightReady: number;
   killsLeft: number;
   /** What the morning brought. */
-  morning: { killed: string | null; silenced: string | null; blackmail: boolean } | null;
+  morning: { killed: string | null; silenced: string | null; blackmail: boolean; guarded?: string | null } | null;
   silenced: string | null;
   blackmailToday: boolean;
   election: { round: 1 | 2; candidates: string[] | null; voted: string[]; firstRound: Record<string, number> | null } | null;
@@ -118,6 +120,6 @@ export function defaultSettings(n: number): MurderSettings {
     murderers: m,
     targets: m,
     killsEach: 1,
-    cards: { kill: true, silence: true, blackmail: true, pardon: true, showdown: false },
+    cards: { kill: true, silence: true, blackmail: true, pardon: true, showdown: false, guard: true },
   };
 }
