@@ -335,7 +335,7 @@ export function MurderPlay({
             <span className="text-xs font-bold tracking-widest text-muted">{(s.settings.cards.guard ? w.guard : "Who do you suspect?").toUpperCase()}</span>
             {s.settings.cards.guard && (
               <p>
-                {w.guardQuestion} If {GUARDS_TO_SAVE} of you choose the same player, the {w.bads} cannot use {w.kill} on them tonight.
+                {w.guardQuestion} If {GUARDS_TO_SAVE} of you choose the same player, the {w.bads} cannot get to them tonight.
               </p>
             )}
             <Grid ids={s.alive.filter((x) => x !== me)} people={people} me={me} pick={pick ?? myPick?.player ?? null} onPick={setPick} />
@@ -723,7 +723,7 @@ export function MurderSettingsPanel({ value, onChange, players, check }: { value
       {toggle("silence", w.silence, "One player cannot talk for a day.")}
       {toggle("blackmail", w.blackmail, `Force one ${w.good}'s vote. Everyone knows a vote was forced, not whose.`)}
       <span className="px-3 pt-2 text-xs font-bold tracking-widest text-muted">{w.good.toUpperCase()} CARDS</span>
-      {toggle("guard", w.guard, `Every night each ${w.good} protects someone. ${GUARDS_TO_SAVE} on the same player stop a ${w.kill.toLowerCase()}.`)}
+      {toggle("guard", w.guard, `Every night each ${w.good} protects someone. ${GUARDS_TO_SAVE} on the same player keep them safe that night.`)}
       {toggle("pardon", w.pardon, `Held by a player elected on day 2. Once, cancel the vote of ${w.house}.`)}
       {toggle("showdown", w.showdown, "Held by a player elected on day 2. Once, the vote is only between the holder and one player.")}
       {players >= 5 && !check.ok && <p className="px-3 font-bold text-alert">{check.reason}</p>}
