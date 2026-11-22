@@ -22,7 +22,9 @@ import { shuffle } from "@/engine/rng";
 import { accept, noop, reject, type GameContext, type GameModule, type PrivateMap, type TurnResult } from "@/engine/types";
 import {
   GUARDS_TO_SAVE,
+  MAX_MESSAGES_PER_NIGHT,
   NIGHT_SECONDS,
+  QUICK_LINES,
   MAX_PLAYERS,
   MIN_PLAYERS,
   POINTS_GUEST_WIN,
@@ -342,6 +344,31 @@ export const murder: GameModule = {
         const clockDone = !ctx.room.phaseEndsAt || Date.parse(ctx.now) >= Date.parse(ctx.room.phaseEndsAt);
         if (ready === s.alive.length && agree && clockDone) return resolveNight(ctx, { ...s, nightReady: ready }, after);
         return accept({ state: pub({ ...s, nightReady: ready }), private: rows });
+      }
+
+      case "whisper": {
+        // A ready-made line to one named player, during the night only.
+        if (phase !== "night" || payload.day !== s.day) return reject("night_only");
+        if (!s.alive.includes(actor)) return reject("not_playing");
+        const to = payload.to;
+        if (typeof to !== "string" || !s.alive.includes(to) || to === actor) return reject("unknown_player");
+        const line = payload.line;
+        if (typeof line !== "number" || !Number.isInteger(line) || line < 0 || line >= QUICK_LINES.length) return reject("bad_choice");
+        const about = typeof payload.about === "string" ? payload.about : null;
+        if (QUICK_LINES[line].about) {
+          if (!about || !s.alive.includes(about)) return reject("unknown_player");
+        } else if (about) return reject("bad_choice");
+        const me = mineOf(priv, actor);
+        const tonight = (me.sent ?? []).filter((w) => w.day === s.day).length;
+        if (tonight >= MAX_MESSAGES_PER_NIGHT) return reject("too_many_messages");
+        const w = { day: s.day, from: actor, to, line, about: QUICK_LINES[line].about ? about : null };
+        const them = mineOf(priv, to);
+        return accept({
+          private: {
+            [actor]: row({ ...me, sent: [...(me.sent ?? []), w] }),
+            [to]: row({ ...them, inbox: [...(them.inbox ?? []), w] }),
+          },
+        });
       }
 
       case "end_night": {

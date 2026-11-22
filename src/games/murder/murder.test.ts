@@ -277,6 +277,51 @@ describe("Ashworth Hall guarding", () => {
   });
 });
 
+describe("Ashworth Hall night messages", () => {
+  it("delivers a named ready-made line to one player only, at night only, and keeps it out of public state", () => {
+    const t = new Table(make(6));
+    t.start(6, { murderers: 1, targets: 1 });
+    const [m] = t.murderers;
+    const [a, b, c] = t.plain;
+    // A line that names a second player.
+    expect(t.act(a, "whisper", { day: 1, to: b, line: 0, about: c }).ok).toBe(true);
+    expect(t.me(b).inbox).toEqual([{ day: 1, from: a, to: b, line: 0, about: c }]);
+    expect(t.me(a).sent).toEqual([{ day: 1, from: a, to: b, line: 0, about: c }]);
+    expect(t.me(c).inbox ?? []).toEqual([]);
+    expect(t.me(m).inbox ?? []).toEqual([]);
+    // A plain line, from the murderer.
+    expect(t.act(m, "whisper", { day: 1, to: a, line: 4 }).ok).toBe(true);
+    expect(t.me(a).inbox).toEqual([{ day: 1, from: m, to: a, line: 4, about: null }]);
+    const text = JSON.stringify(t.room.state);
+    expect(text).not.toContain("inbox");
+    expect(text).not.toContain("whisper");
+    // Rules: no free text, no unknown lines, no missing or extra names, not to yourself.
+    expect(t.act(a, "whisper", { day: 1, to: b, line: 0 }).ok).toBe(false);
+    expect(t.act(a, "whisper", { day: 1, to: b, line: 4, about: c }).ok).toBe(false);
+    expect(t.act(a, "whisper", { day: 1, to: b, line: 99 }).ok).toBe(false);
+    expect(t.act(a, "whisper", { day: 1, to: b, line: "you are the murderer" }).ok).toBe(false);
+    expect(t.act(a, "whisper", { day: 1, to: a, line: 4 }).ok).toBe(false);
+    // Up to ten a night.
+    for (let i = 0; i < 9; i++) expect(t.act(a, "whisper", { day: 1, to: c, line: 5 }).ok).toBe(true);
+    expect(t.act(a, "whisper", { day: 1, to: c, line: 5 }).ok).toBe(false);
+    // Messages survive into the day, and cannot be sent by day.
+    t.night({ action: "nothing" });
+    expect(t.room.phase).toBe("day");
+    expect(t.me(b).inbox!.length).toBe(1);
+    // b has sent nothing, so only the night rule can stop this.
+    expect(t.act(b, "whisper", { day: 1, to: a, line: 4 })).toMatchObject({ ok: false, reason: "night_only" });
+    // A new night resets the count.
+    t.act("mum", "next", { day: 1 });
+    const [p0, p1] = t.s.alive;
+    t.act(p0, "vote", { day: 1, player: p1 });
+    t.act(p1, "vote", { day: 1, player: p0 });
+    t.act("mum", "count_votes", { day: 1 });
+    t.act("mum", "next", { day: 1 });
+    expect(t.act(a, "whisper", { day: 2, to: c, line: 5 }).ok).toBe(true);
+    expect(t.me(b).inbox!.length).toBe(1);
+  });
+});
+
 describe("Ashworth Hall winning", () => {
   it("murderers win when every target is framed; votes are revealed name by name", () => {
     const t = new Table(make(6));

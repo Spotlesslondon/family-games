@@ -219,6 +219,8 @@ const MESSAGES: Record<string, string> = {
   cannot_kill_target: "You cannot kill a guest you have to frame.",
   no_kills_left: "You have no kills left.",
   card_off: "That card is not in this game.",
+  night_only: "Messages can only be sent at night.",
+  too_many_messages: "That is enough messages for tonight.",
   unknown_player: "That player is not in this game.",
   no_votes: "Nobody has voted yet.",
   proposal_changed: "Someone named a different suspect. Look again and agree to that one.",

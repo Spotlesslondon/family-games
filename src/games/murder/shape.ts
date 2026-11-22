@@ -10,7 +10,32 @@ export const MAX_PLAYERS = 12;
 /** Guards needed on one player to stop a kill (Joshua, 22 Nov 13:35: guests need a reason to tap at night). */
 export const GUARDS_TO_SAVE = 2;
 /** The shortest night. Morning cannot come sooner, so the murderers are not the only ones still looking at their phones (Joshua, 22 Nov 13:42). */
-export const NIGHT_SECONDS = 20;
+export const NIGHT_SECONDS = 40;
+
+/** Night messages (Joshua, 22 Nov 14:05): named, ready-made lines only, so every
+ * phone is busy at night and nobody can type free text to anyone else. A line
+ * with {about} names a second player. */
+export const QUICK_LINES: { text: string; about: boolean }[] = [
+  { text: "I suspect {about}", about: true },
+  { text: "Watch {about} tomorrow", about: true },
+  { text: "Vote {about} with me", about: true },
+  { text: "{about} is innocent, I am sure", about: true },
+  { text: "Trust me tomorrow", about: false },
+  { text: "I am innocent", about: false },
+  { text: "Who do you suspect?", about: false },
+  { text: "I have my eye on you", about: false },
+  { text: "Back me up tomorrow", about: false },
+  { text: "Keep this between us", about: false },
+];
+export const MAX_MESSAGES_PER_NIGHT = 10;
+
+export interface Whisper {
+  day: number;
+  from: string;
+  to: string;
+  line: number;
+  about: string | null;
+}
 export const POINTS_MURDERER_WIN = 5;
 export const POINTS_GUEST_WIN = 3;
 
@@ -98,6 +123,9 @@ export interface MurderMine {
   /** Private until everyone has voted. */
   vote?: string | null;
   elect?: string | null;
+  /** Night messages to and from this phone. Private: never in public state. */
+  inbox?: Whisper[];
+  sent?: Whisper[];
 }
 
 /** Plain rules check for the host's settings. Blocks what cannot work, warns on what is lopsided. */

@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { useServerOffset } from "@/lib/client/clock";
 import { message } from "@/lib/client/session";
-import { GUARDS_TO_SAVE, type MurderMine, type MurderPublic, type MurderSettings, type NightPick, type VoteDay } from "@/games/murder/shape";
+import { GUARDS_TO_SAVE, MAX_MESSAGES_PER_NIGHT, QUICK_LINES, type Whisper, type MurderMine, type MurderPublic, type MurderSettings, type NightPick, type VoteDay } from "@/games/murder/shape";
 import { THEMES, art, cap, themeOf, type ThemeKey, type ThemeWords } from "@/games/murder/themes";
 import { Avatar, type Person } from "./mr-white-play";
 import { Emblem, useThemeBackdrop } from "./frame-art";
@@ -106,6 +106,103 @@ function NightClock({ endsAt, fire }: { endsAt: string | null; fire: () => unkno
     <div className="flex items-center justify-between rounded-2xl border-2 border-ink bg-surface px-4 py-2" role="timer" aria-live="off">
       <span className="font-bold">{due ? "Waiting for the last choices" : "Eyes on your phone until morning"}</span>
       {!due && <span className="font-display text-3xl font-bold tabular-nums">0:{String(left).padStart(2, "0")}</span>}
+    </div>
+  );
+}
+
+const lineText = (w: Whisper, name: (id: string) => string) => QUICK_LINES[w.line]?.text.replace("{about}", w.about ? name(w.about) : "someone") ?? "";
+
+/** Night messages: pick a player, pick a ready-made line, send. Everyone can, all night, so every phone stays busy. */
+function Messages({ s, mine, me, people, name, go, busy }: { s: MurderPublic; mine: MurderMine | null; me: string; people: Map<string, Person>; name: (id: string) => string; go: (type: string, payload?: Record<string, unknown>) => Promise<unknown>; busy: boolean }) {
+  const [to, setTo] = useState<string | null>(null);
+  const [line, setLine] = useState<number | null>(null);
+  const [about, setAbout] = useState<string | null>(null);
+  const sentTonight = (mine?.sent ?? []).filter((w) => w.day === s.day).length;
+  const inbox = [...(mine?.inbox ?? [])].reverse();
+  const needsAbout = line !== null && QUICK_LINES[line].about;
+  const ready = to && line !== null && (!needsAbout || about);
+  const others = s.alive.filter((x) => x !== me);
+  async function send() {
+    if (!ready) return;
+    await go("whisper", { day: s.day, to, line, about: needsAbout ? about : null });
+    setLine(null);
+    setAbout(null);
+  }
+  return (
+    <div className="card flex flex-col gap-3 px-4 py-4">
+      <span className="text-xs font-bold tracking-widest text-muted">SEND A MESSAGE · {sentTonight} OF {MAX_MESSAGES_PER_NIGHT} TONIGHT</span>
+      <span className="font-bold">To</span>
+      <Grid ids={others} people={people} me={me} pick={to} onPick={setTo} />
+      {to && (
+        <div className="flex flex-wrap gap-2">
+          {QUICK_LINES.map((l, i) => (
+            <button
+              key={i}
+              type="button"
+              aria-pressed={line === i}
+              onClick={() => {
+                setLine(i);
+                setAbout(null);
+              }}
+              className={`min-h-11 rounded-2xl border-2 border-ink px-3 text-left text-sm font-bold ${line === i ? "bg-go shadow-[3px_3px_0_#111]" : "bg-surface"}`}
+            >
+              {l.text.replace("{about}", "...")}
+            </button>
+          ))}
+        </div>
+      )}
+      {needsAbout && (
+        <>
+          <span className="font-bold">Who is it about?</span>
+          <Grid ids={s.alive} people={people} me={me} pick={about} onPick={setAbout} />
+        </>
+      )}
+      {to && line !== null && (
+        <button type="button" disabled={busy || !ready} onClick={send} className={secondary}>
+          {ready ? `Send to ${name(to)}: "${lineText({ day: s.day, from: me, to, line, about: needsAbout ? about : null }, name)}"` : "Choose who it is about"}
+        </button>
+      )}
+      {inbox.length > 0 && (
+        <div className="flex flex-col gap-1 border-t-2 border-ink/10 pt-2">
+          <span className="text-xs font-bold tracking-widest text-muted">MESSAGES TO YOU</span>
+          {inbox.map((w, i) => (
+            <p key={i}>
+              <strong>{name(w.from)}</strong>
+              {w.day !== s.day ? ` (night ${w.day})` : ""}: {lineText(w, name)}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Last night's messages, readable by day. */
+function MessageLog({ mine, name }: { mine: MurderMine | null; name: (id: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const inbox = [...(mine?.inbox ?? [])].reverse();
+  const sent = [...(mine?.sent ?? [])].reverse();
+  if (inbox.length === 0 && sent.length === 0) return null;
+  return (
+    <div className="card flex flex-col gap-2 px-4 py-3">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex items-center justify-between font-bold">
+        <span>Your messages ({inbox.length} in, {sent.length} out)</span>
+        <span className="text-sm text-muted">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <>
+          {inbox.map((w, i) => (
+            <p key={`i${i}`}>
+              Night {w.day}, <strong>{name(w.from)}</strong> to you: {lineText(w, name)}
+            </p>
+          ))}
+          {sent.map((w, i) => (
+            <p key={`s${i}`} className="text-muted">
+              Night {w.day}, you to <strong>{name(w.to)}</strong>: {lineText(w, name)}
+            </p>
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -303,7 +400,7 @@ export function MurderPlay({
           <Emblem theme={w.key} size={44} />
           <h2 className="font-display text-3xl font-bold leading-tight">{w.nightTitle}</h2>
         </div>
-        <p className="text-lg">Everyone looks at their phone and makes a choice. Keep your screen to yourself, and keep looking until morning.</p>
+        <p className="text-lg">Everyone makes a choice and can send messages. Keep your screen to yourself, and keep looking until morning.</p>
         {alive && <NightClock endsAt={phaseEndsAt} fire={() => act("advance_if_expired")} />}
         {!alive ? (
           <p className="card px-4 py-4 text-lg">You are out of the game. Stay at the table and watch {w.house}.</p>
@@ -384,6 +481,7 @@ export function MurderPlay({
             )}
           </div>
         )}
+        {alive && <Messages s={s} mine={mine} me={me} people={people} name={name} go={go} busy={busy} />}
         {isHost && (
           <p className="text-center text-muted">
             {s.nightReady} of {s.alive.length} ready
@@ -426,6 +524,7 @@ export function MurderPlay({
           </div>
         )}
         <Secret mine={mine} s={s} name={name} />
+        <MessageLog mine={mine} name={name} />
         {passing}
         {phase === "election" && e ? (
           <div className="card flex flex-col gap-3 px-4 py-4">
