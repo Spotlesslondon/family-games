@@ -177,3 +177,14 @@ body {
   .machine-stamp { transform: rotate(-8deg); }
   .machine-confetti { display: none; }
 }
+
+/* Frame game themes (22 Nov): while a themed game is on screen the page takes
+   the theme's ground colour and a light pattern. Set from frame-art.tsx and
+   removed when the game leaves the screen. Colours are contrast checked there. */
+html[data-frame-theme] body,
+html[data-frame-theme] .bg-ground {
+  background-color: var(--frame-ground);
+  background-image: var(--frame-pattern);
+  background-attachment: fixed;
+  transition: background-color 0.6s ease;
+}

@@ -11,6 +11,7 @@ import { message } from "@/lib/client/session";
 import type { MurderMine, MurderPublic, MurderSettings, NightPick, VoteDay } from "@/games/murder/shape";
 import { THEMES, art, cap, themeOf, type ThemeKey, type ThemeWords } from "@/games/murder/themes";
 import { Avatar, type Person } from "./mr-white-play";
+import { Emblem, useThemeBackdrop } from "./frame-art";
 
 type Act = (type: string, payload?: Record<string, unknown>) => Promise<{ ok?: boolean; reason?: string } | null>;
 
@@ -202,6 +203,7 @@ export function MurderPlay({
   const [voteFor, setVoteFor] = useState<string | null>(null);
   const isHost = me === hostId;
   const w = themeOf(s.settings.theme);
+  useThemeBackdrop(w.key, phase === "night");
   const alive = s.alive.includes(me);
   const name = (id: string) => (id === me ? "You" : people.get(id)?.name ?? "Someone");
   const hostName = people.get(hostId)?.name ?? "the host";
@@ -233,6 +235,7 @@ export function MurderPlay({
     return (
       <section className="flex flex-1 flex-col gap-4">
         {header}
+        <Emblem theme={w.key} size={72} />
         <h2 className="font-display text-4xl font-bold leading-tight">{w.title}</h2>
         <p className="text-lg font-bold">{w.tagline}</p>
         <Secret mine={mine} s={s} name={name} />
@@ -267,7 +270,10 @@ export function MurderPlay({
     return (
       <section className="flex flex-1 flex-col gap-4">
         {header}
-        <h2 className="font-display text-3xl font-bold leading-tight">{w.nightTitle}</h2>
+        <div className="flex items-center gap-3">
+          <Emblem theme={w.key} size={44} />
+          <h2 className="font-display text-3xl font-bold leading-tight">{w.nightTitle}</h2>
+        </div>
         <p className="text-lg">Everyone looks at their phone and makes a choice. Keep your screen to yourself.</p>
         {!alive ? (
           <p className="card px-4 py-4 text-lg">You are out of the game. Stay at the table and watch {w.house}.</p>
@@ -356,7 +362,10 @@ export function MurderPlay({
     return (
       <section className="flex flex-1 flex-col gap-4">
         {header}
-        <h2 className="font-display text-3xl font-bold leading-tight">{phase === "election" ? "Elect someone you trust" : w.morningTitle}</h2>
+        <div className="flex items-center gap-3">
+          <Emblem theme={w.key} size={44} />
+          <h2 className="font-display text-3xl font-bold leading-tight">{phase === "election" ? "Elect someone you trust" : w.morningTitle}</h2>
+        </div>
         {m && phase === "day" && (
           <div className="card flex flex-col gap-2 px-5 py-4 text-lg">
             {m.killed && <p className="font-bold">{w.killed(name(m.killed), m.killed === me)}</p>}
@@ -570,6 +579,7 @@ function Reveal({
           )}
           {s.winner && s.endReveal && (
             <div className="flex flex-col items-center gap-3 py-2">
+              <Emblem theme={w.key} size={64} />
               <span
                 className={`rounded-3xl border-[5px] px-5 py-3 text-center font-display text-4xl font-bold leading-none text-white shadow-[6px_6px_0_#111] ${s.winner === "guests" ? "border-[#1f6b3a] bg-[#3da35d]" : "border-ink"}`}
                 style={{ transform: "rotate(-3deg)", ...(s.winner === "guests" ? {} : { background: w.badColour }) }}
@@ -605,8 +615,10 @@ export function MurderResults({ state: s, me, hostId, people, act }: { state: Mu
   const ranked = [...s.team].sort((a, b) => (s.scores[b] ?? 0) - (s.scores[a] ?? 0));
   const name = (id: string) => (id === me ? "You" : people.get(id)?.name ?? "Someone");
   const w = themeOf(s.settings?.theme);
+  useThemeBackdrop(w.key, false);
   return (
     <section className="flex flex-1 flex-col gap-4">
+      <Emblem theme={w.key} size={64} />
       <h2 className="font-display text-4xl font-bold leading-tight text-ink">{s.winner === "guests" ? `The ${w.goods} win` : `The ${w.bads} win`}</h2>
       {s.endReveal && (
         <p className="text-lg">
