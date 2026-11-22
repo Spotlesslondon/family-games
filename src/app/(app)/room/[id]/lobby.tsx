@@ -24,8 +24,10 @@ import { NervePlay, NerveResults, type NerveOptions } from "./nerve-play";
 import { MachinePlay, MachineResults, type MachineOptions } from "./machine-play";
 import { LEVEL_NAMES, type MachineMine, type MachinePublic } from "@/games/machine/shape";
 import { DetectivePlay, DetectiveResults, type DetectiveOptions } from "./detective-play";
-import { MurderPlay, MurderResults, type MurderOptions } from "./murder-play";
-import type { Booklet, MurderPublic } from "@/games/murder/shape";
+import { MurderPlay, MurderResults, MurderSettingsPanel, type MurderOptions } from "./murder-play";
+import { checkSettings, defaultSettings, type MurderMine, type MurderPublic } from "@/games/murder/shape";
+import { themeOf } from "@/games/murder/themes";
+const THEME_TITLE = (k: unknown) => themeOf(k).title;
 import { LEVEL_NAMES as DETECTIVE_LEVEL_NAMES, type DetectiveMine, type DetectivePublic } from "@/games/detective/shape";
 import type { NervePublic } from "@/games/nerve/shape";
 import { QUIZ_TOPICS, type QuizLength, type QuizMine, type QuizPublic, type QuizTopic } from "@/games/quiz/shape";
@@ -114,7 +116,7 @@ export function Lobby() {
   const [mrWhiteOn, setMrWhiteOn] = useState(true);
   const [spoken, setSpoken] = useState(false);
   const [game, setGame] = useState<"mr-white" | "quiz" | "nerve" | "machine" | "detective" | "murder">("mr-white");
-  const [murderOpts, setMurderOpts] = useState<MurderOptions>({ length: "short" });
+  const [murderPicked, setMurderOpts] = useState<MurderOptions | null>(null);
   const [detectiveOpts, setDetectiveOpts] = useState<DetectiveOptions>({ level: 1, length: "short" });
   const [machineOpts, setMachineOpts] = useState<MachineOptions>({ pace: "relaxed", length: "normal", level: 1 });
   const [nerveOpts, setNerveOpts] = useState<NerveOptions>({ pace: "normal", length: "normal", level: "normal" });
@@ -383,6 +385,8 @@ export function Lobby() {
     typeof room.state?.inChargeFrom === "string" &&
     nowMs >= Date.parse(room.state.inChargeFrom as string);
   const here = seats.length; // everyone in the room; anyone away is marked on their avatar
+  const murderOpts = murderPicked ?? defaultSettings(here);
+  const murderCheck = checkSettings(here, murderOpts);
   const people = new Map(seats.map((s) => [s.id, { id: s.id, name: s.name, colour: s.colour, avatar: s.avatar }]));
   const meSeat = seats.find((s) => s.id === session.member.id);
 
@@ -428,7 +432,7 @@ export function Lobby() {
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 pb-6 pt-10">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : isMachine ? "Fix the Machine" : isDetective ? "Detective" : isMurder ? "Murder at Ashworth Hall" : "Mr White"}</h1>
+            <h1 className="font-display text-2xl font-semibold text-ink">{isQuiz ? "The quiz" : isNerve ? "Nerve" : isMachine ? "Fix the Machine" : isDetective ? "Detective" : isMurder ? themeOf((room.state as unknown as MurderPublic)?.settings?.theme).title : "Mr White"}</h1>
             {hostEnd}
           </div>
           <div className="flex items-center gap-3">
@@ -445,7 +449,7 @@ export function Lobby() {
             <MurderPlay
               phase={room.phase}
               state={room.state as unknown as MurderPublic}
-              mine={(mine && "guest" in mine ? (mine as unknown as Booklet & { vote?: string }) : null)}
+              mine={mine && "role" in mine ? (mine as unknown as MurderMine) : null}
               me={session.member.id}
               hostId={controlId}
               people={people}
@@ -644,7 +648,7 @@ export function Lobby() {
                 ["nerve", "Nerve"],
                 ["machine", "Fix the Machine"],
                 ["detective", "Detective"],
-                ["murder", "Murder Mystery"],
+                ["murder", "Frame"],
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
@@ -720,17 +724,7 @@ export function Lobby() {
                 ))}
               </div>
             ) : game === "murder" ? (
-              <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Murder Mystery settings">
-                <p className="px-3 text-sm text-muted">A dinner party, a body in the library, and one of you did it. Everyone plays a guest; the murderer knows. 4 to 8 players.</p>
-                <button
-                  type="button"
-                  onClick={() => setMurderOpts((o) => ({ ...o, length: o.length === "short" ? "normal" : "short" }))}
-                  className="flex min-h-12 items-center justify-between rounded-2xl px-3 text-left font-bold"
-                >
-                  <span>Length</span>
-                  <span className="rounded-full bg-surface-2 px-3 py-1 text-sm">{murderOpts.length === "short" ? "1 case" : "3 cases"}</span>
-                </button>
-              </div>
+              <MurderSettingsPanel value={murderOpts} onChange={setMurderOpts} players={here} check={murderCheck} />
             ) : game === "detective" ? (
               <div className="card flex flex-col gap-2 p-3" role="group" aria-label="Detective settings">
                 <p className="px-3 text-sm text-muted">Something has gone missing. Each of you holds different evidence. Put it together and name who did it. 2 or more players.</p>
@@ -820,7 +814,7 @@ export function Lobby() {
             )}
             <button
               type="button"
-              disabled={here < (game === "murder" ? 4 : game === "mr-white" ? 3 : 2) || (game === "murder" && here > 8)}
+              disabled={game === "murder" ? !murderCheck.ok : here < (game === "mr-white" ? 3 : 2)}
               onClick={async () => {
                 const out =
                   game === "murder"
@@ -839,11 +833,9 @@ export function Lobby() {
               className="btn btn-primary h-16 font-display text-2xl font-bold text-ink disabled:bg-surface-2 disabled:text-muted"
             >
               {game === "murder"
-                ? here < 4
-                  ? "Murder Mystery needs 4 players"
-                  : here > 8
-                  ? "Murder Mystery is for up to 8"
-                  : "Play Murder Mystery"
+                ? !murderCheck.ok
+                  ? murderCheck.reason
+                  : `Play ${THEME_TITLE(murderOpts.theme)}`
                 : game === "detective"
                 ? here < 2
                   ? "Detective needs 2 players"

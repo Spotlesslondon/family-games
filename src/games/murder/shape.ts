@@ -1,62 +1,123 @@
-// What phones may see of Murder at Ashworth Hall (Joshua, 21 Nov 19:05:
-// "Research the murder mystery game. Then build your version with the basic
-// images"). The players are the suspects; one of them did it and knows. The
-// public state never holds who; each phone gets only its own booklet.
+// Murder at Ashworth Hall, rebuilt 22 Nov 2026 as a hidden-murderer game the
+// players drive (Joshua, 22 Nov: "The aim of the game is to frame someone").
+// Rules are in claude/ashworth-hall-rebuild-v0.md. Copy is a tech lead draft
+// for the CEO seat to rewrite.
 
-import type { Exhibit } from "@/games/detective/shape";
+import type { ThemeKey } from "./themes";
 
-export type MurderLength = "short" | "normal";
-export const MURDER_CASES: Record<MurderLength, number> = { short: 1, normal: 3 };
+export const MIN_PLAYERS = 5;
+export const MAX_PLAYERS = 12;
+export const POINTS_MURDERER_WIN = 5;
+export const POINTS_GUEST_WIN = 3;
 
-/** Points: every innocent player when the murderer is caught; the murderer when they get away. */
-export const POINTS_CAUGHT = 3;
-export const POINTS_ESCAPED = 5;
+export type CardKey = "kill" | "silence" | "blackmail" | "pardon" | "showdown";
+export const MURDERER_CARDS: CardKey[] = ["kill", "silence", "blackmail"];
+export const GUEST_CARDS: CardKey[] = ["pardon", "showdown"];
 
-/** The guests at the dinner party. Invented, not from any other game. */
-export const GUESTS = ["Major Ashby", "Dr Penrose", "Lady Vane", "Chef Rossi", "Miss Lark", "Mr Finch", "Professor Quill", "Madame Orla"] as const;
-
-export interface Guest {
-  name: string;
-  colour: string;
-  clothes: string;
-  /** What they say about themselves in round 1. */
-  intro: string;
+export interface MurderSettings {
+  /** Words and colours only; the rules are the same in every theme. */
+  theme: ThemeKey;
+  murderers: number;
+  targets: number;
+  /** Kills each murderer brings to the game, pooled. */
+  killsEach: number;
+  cards: Record<CardKey, boolean>;
 }
 
-/** A player's booklet. Stage 1 at the introductions, stage 2 at "where were you", stage 3 adds the clue. */
-export interface Booklet {
-  round: number;
-  guest: Guest;
-  murderer: boolean;
-  secret: string;
-  /** What they say in round 2: the truth, or the murderer's cover story. */
-  story: string;
-  /** Round 3: one clue, in words and as a picture where it has one. */
-  clue: { line: string; exhibit: Exhibit | null } | null;
+/** A night choice. Guests make one too (a suspect), so every phone is busy at night. */
+export interface NightPick {
+  action: "kill" | "silence" | "blackmail" | "nothing" | "suspect";
+  player: string | null;
+  /** Blackmail only: who the blackmailed guest must vote for tomorrow. */
+  voteFor?: string | null;
+}
+
+export interface VoteDay {
+  day: number;
+  showdown: { caller: string; opponent: string } | null;
+  /** Revealed only after everyone has voted. */
+  entries: { voter: string; vote: string }[];
+  out: string | null;
+  pardoned: boolean;
+  /** Role of who left, shown at the reveal. */
+  role: "murderer" | "guest" | null;
+  target: boolean;
+  blackmail: boolean;
+}
+
+export interface Departure {
+  id: string;
+  how: "killed" | "sent_away";
+  day: number;
+  role: "murderer" | "guest";
 }
 
 export interface MurderPublic {
-  settings: { length: MurderLength; cases: number };
-  round: number;
+  settings: MurderSettings;
   team: string[];
-  nonce: string;
-  /** Which player plays which guest (the outfits are public: everyone sees what everyone wears). */
-  cast: Record<string, Guest>;
-  story: string | null;
-  /** Who has voted, never for whom, until the reveal. */
+  alive: string[];
+  departed: Departure[];
+  day: number;
+  /** How many phones have made tonight's choice. Names are not shown: the last to tap could be a murderer. */
+  nightReady: number;
+  killsLeft: number;
+  /** What the morning brought. */
+  morning: { killed: string | null; silenced: string | null; blackmail: boolean } | null;
+  silenced: string | null;
+  blackmailToday: boolean;
+  election: { round: 1 | 2; candidates: string[] | null; voted: string[]; firstRound: Record<string, number> | null } | null;
+  cardHolder: string | null;
+  electionDone: boolean;
+  pardonUsed: boolean;
+  showdownUsed: boolean;
+  /** A card holder who has left must hand the card on. */
+  passing: string | null;
   voted: string[];
+  votes: VoteDay[];
+  framed: number;
+  winner: "murderers" | "guests" | null;
+  /** Revealed at the end: who the murderers were and who they had to frame. */
+  endReveal: { murderers: string[]; targets: string[] } | null;
   scores: Record<string, number>;
-  last: {
-    round: number;
-    murdererId: string;
-    murderer: string;
-    accusedId: string | null;
-    caught: boolean;
-    tally: Record<string, number>;
-    why: string[];
-  } | null;
   finished: boolean;
 }
 
-/** The order of a case: phases the host moves the table through. */
-export const STAGES = ["introductions", "alibis", "evidence", "vote"] as const;
+export interface MurderMine {
+  role: "murderer" | "guest";
+  /** Murderers only. */
+  partners?: string[];
+  targets?: string[];
+  pick?: NightPick | null;
+  partnerPicks?: Record<string, NightPick | null>;
+  /** Guests only, while blackmailed: the vote they must cast today. */
+  mustVote?: string | null;
+  /** Private until everyone has voted. */
+  vote?: string | null;
+  elect?: string | null;
+}
+
+/** Plain rules check for the host's settings. Blocks what cannot work, warns on what is lopsided. */
+export function checkSettings(n: number, s: MurderSettings): { ok: boolean; reason?: string; warning?: string } {
+  if (n < MIN_PLAYERS) return { ok: false, reason: `Needs ${MIN_PLAYERS} players` };
+  if (n > MAX_PLAYERS) return { ok: false, reason: `Up to ${MAX_PLAYERS} players` };
+  if (s.murderers < 1) return { ok: false, reason: "Needs at least 1 murderer" };
+  if (s.targets < 1) return { ok: false, reason: "Needs at least 1 target" };
+  const guests = n - s.murderers;
+  if (guests <= s.murderers) return { ok: false, reason: "Too many murderers for this many players" };
+  if (s.targets > guests - 1) return { ok: false, reason: "Too many targets for this many guests" };
+  // Warnings from the 22 Nov simulation: lopsided settings, still playable.
+  if (s.targets > 2 * s.murderers) return { ok: true, warning: "Very hard for the murderers" };
+  if (s.murderers * 3 > n) return { ok: true, warning: "Very hard for the guests" };
+  return { ok: true };
+}
+
+export function defaultSettings(n: number): MurderSettings {
+  const m = n >= 8 ? 2 : 1;
+  return {
+    theme: "manor",
+    murderers: m,
+    targets: m,
+    killsEach: 1,
+    cards: { kill: true, silence: true, blackmail: true, pardon: true, showdown: false },
+  };
+}

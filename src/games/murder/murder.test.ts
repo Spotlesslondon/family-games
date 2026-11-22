@@ -3,106 +3,23 @@ import { applyPrivate, applyWrite } from "@/engine/apply";
 import { LOBBY, RESULTS, applyRoomAction } from "@/engine/room";
 import { seededRng } from "@/engine/rng";
 import type { GameContext, Player, PrivateMap, RoomSnapshot } from "@/engine/types";
-import { buildMurder, type MurderCase } from "./case";
-import { MURDER, caseFor } from "./index";
-import type { Booklet, MurderPublic } from "./shape";
+import { MURDER } from "./index";
+import { checkSettings, defaultSettings, type MurderMine, type MurderPublic } from "./shape";
+import { THEMES, art } from "./themes";
 import "../index";
 
-/**
- * Read the booklets the way a table would, from the words alone, and find who
- * it can be. Assume one player is lying (the murderer says their cover story)
- * and everyone else tells the truth; keep the worlds that hold together and
- * leave the liar unexplained. Your own word never clears you. Written apart
- * from the generator: it never sees the truth, only the text and the outfits.
- */
-function solve(c: MurderCase, speakers: string[], assumeLiarAmong: boolean): string[] {
-  const names = c.truth.guests.map((g) => g.name);
-  const wear = Object.fromEntries(c.truth.guests.map((g) => [g.name, g.colour]));
-  const found = Number(c.story.match(/At \d+:(\d\d), Hobbs/)![1]);
-  const read = (who: string) => {
-    const b = c.booklets[who];
-    const places: { who: string; room: string; from: number; to: number; by: string }[] = [];
-    let m = b.story.match(/^You were in the (.+?)(?: with (.+?)| on your own) from \d+:(\d\d) until \d+:(\d\d)\.$/);
-    if (!m) throw new Error("unreadable story: " + b.story);
-    places.push({ who, room: m[1], from: Number(m[3]), to: Number(m[4]), by: who });
-    if (m[2]) places.push({ who: m[2], room: m[1], from: Number(m[3]), to: Number(m[4]), by: who });
-    let alive: number | null = null;
-    let thread: string | null = null;
-    const l = b.clue.line;
-    if ((m = l.match(/messaged you at \d+:(\d\d)/))) alive = Number(m[1]);
-    for (const x of l.matchAll(/Hall camera, \d+:(\d\d): (.+?) walks into the library(?:, and out again at \d+:(\d\d))?\./g)) {
-      places.push({ who: x[2], room: "library", from: Number(x[1]), to: Number(x[3] ?? x[1]), by: who });
-    }
-    if ((m = l.match(/^An? (\w+) wool thread caught on the library armchair\.$/))) thread = m[1];
-    return { places, alive, thread };
-  };
-  const world = (said: string[]) => {
-    const r = said.map(read);
-    const places = r.flatMap((x) => x.places);
-    const alive = r.map((x) => x.alive).find((v) => v !== null) ?? null;
-    const thread = r.map((x) => x.thread).find((v) => v !== null) ?? null;
-    const clash = places.some((p) => places.some((q) => p.who === q.who && p.room !== q.room && p.from <= q.to && q.from <= p.to));
-    const cleared = (x: string) =>
-      (thread !== null && wear[x] !== thread) || (alive !== null && places.some((p) => p.who === x && p.by !== x && p.room !== "library" && p.from <= alive && p.to >= found));
-    return { clash, cleared };
-  };
-  if (assumeLiarAmong) {
-    return names.filter((liar) => {
-      const w = world(speakers.filter((x) => x !== liar));
-      return !w.clash && !w.cleared(liar);
-    });
-  }
-  const w = world(speakers);
-  return names.filter((x) => !speakers.includes(x) && !w.cleared(x));
-}
-
-describe("Murder at Ashworth Hall cases", () => {
-  it("for 4 to 8 players, only the murderer's lie fits, and nobody can solve it from their own booklet", () => {
-    for (let n = 4; n <= 8; n++) {
-      for (let seed = 1; seed <= 300; seed++) {
-        const c = buildMurder(seed, n);
-        const t = c.truth;
-        const names = t.guests.map((g) => g.name);
-        expect(names.length).toBe(n);
-        expect(buildMurder(seed, n)).toEqual(c);
-        // All booklets read out loud: only one world holds, and its liar is the murderer.
-        expect(solve(c, names, true), `${n}/${seed}`).toEqual([t.murderer]);
-        // One innocent's booklet plus the outfits never narrows it to one person.
-        for (const g of names.filter((x) => x !== t.murderer)) expect(solve(c, [g], false).length, `${n}/${seed} ${g} alone`).toBeGreaterThan(1);
-        // The murderer's cover story is caught out by the camera.
-        expect(c.booklets[t.murderer].story).toContain("on your own");
-        const cam = names.find((x) => c.booklets[x].clue.line.includes(`${t.murderer} walks into the library`));
-        expect(cam).toBeDefined();
-        expect(cam).not.toBe(t.murderer);
-        // The thread matches the murderer and at least one innocent, so the thread alone is not enough.
-        const colour = t.guests.find((g) => g.name === t.murderer)!.colour;
-        expect(t.guests.filter((g) => g.colour === colour).length).toBeGreaterThan(1);
-        // Plain words: no "a" before a vowel, no em dash.
-        for (const b of Object.values(c.booklets)) for (const line of [b.story, b.clue.line, b.secret]) expect(line).not.toMatch(/—|\ba [aeiou]/i);
-        for (const w of c.why) expect(w).not.toMatch(/—|\ba [aeiou]/i);
-        expect(c.why[0].startsWith(`${t.murderer} did it.`)).toBe(true);
-        expect(c.why.length).toBe(n);
-      }
-    }
-  });
-});
-
-const people: Player[] = ["mum", "dad", "kid", "nan", "teen"].map((id, i) => ({ id, name: id, ageBand: "16+", role: i === 0 ? "owner" : "member" }));
+const names = ["mum", "dad", "kid", "nan", "teen", "gran", "uncle", "aunt", "cousin"];
+const make = (n: number): Player[] => names.slice(0, n).map((id, i) => ({ id, name: id, ageBand: "16+", role: i === 0 ? "owner" : "member" }));
 
 class Table {
   room: RoomSnapshot;
   priv: PrivateMap = {};
-  rng = seededRng(9);
-  constructor(public players = people) {
+  rng = seededRng(11);
+  constructor(public players: Player[]) {
     this.room = { id: "room-1", version: 0, hostId: "mum", status: "open", currentGame: null, phase: LOBBY, phaseEndsAt: null, state: {}, members: players.map((p) => ({ id: p.id, connected: true })) };
   }
   ctx(): GameContext {
-    const secret = (label: string) => {
-      let h = 0;
-      for (const ch of label) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-      return (h % 100000) / 100001;
-    };
-    return { room: this.room, players: this.players, private: this.priv, now: "2026-11-21T20:00:00.000Z", rng: this.rng, secret };
+    return { room: this.room, players: this.players, private: this.priv, now: "2026-11-22T20:00:00.000Z", rng: this.rng };
   }
   act(actorId: string, type: string, payload?: Record<string, unknown>) {
     const r = applyRoomAction(this.ctx(), { type, actorId, payload });
@@ -115,80 +32,280 @@ class Table {
   get s() {
     return this.room.state as unknown as MurderPublic;
   }
-  b(id: string) {
-    return this.priv[id] as unknown as Booklet & { vote?: string };
+  me(id: string) {
+    return this.priv[id] as unknown as MurderMine;
   }
-  murdererId() {
-    const { c, playerOf } = caseFor(this.ctx(), this.s);
-    return playerOf[c.truth.murderer];
+  get murderers() {
+    return this.players.map((p) => p.id).filter((id) => this.me(id).role === "murderer");
+  }
+  get targets() {
+    return this.me(this.murderers[0]).targets!;
+  }
+  get plain() {
+    // Guests who are not targets, still in the game.
+    return this.s.alive.filter((id) => !this.murderers.includes(id) && !this.targets.includes(id));
+  }
+  start(n: number, options: Record<string, unknown> = {}) {
+    const r = this.act("mum", "start_game", { gameId: MURDER, options });
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    expect(this.room.phase).toBe("roles");
+    this.act("mum", "next", { day: 0 });
+    expect(this.room.phase).toBe("night");
+    return n;
+  }
+  /** Everyone makes a night choice; the murderers all choose `pick`. */
+  night(pick: Record<string, unknown>) {
+    const day = this.s.day;
+    for (const id of this.s.alive) {
+      if (this.murderers.includes(id)) this.act(id, "night_pick", { day, ...pick });
+      else this.act(id, "night_pick", { day, action: "suspect", player: this.s.alive.find((x) => x !== id) });
+    }
+  }
+  /** Everyone still in votes for `who` (who votes for someone else). */
+  voteOut(who: string) {
+    const day = this.s.day;
+    for (const id of this.s.alive) {
+      const must = this.me(id).mustVote;
+      const choice = must && must !== id && this.s.alive.includes(must) ? must : id === who ? this.s.alive.find((x) => x !== id)! : who;
+      const r = this.act(id, "vote", { day, player: choice });
+      expect(r.ok, `${id} -> ${choice} ${JSON.stringify(r)}`).toBe(true);
+    }
   }
 }
 
-describe("Murder at Ashworth Hall game", () => {
-  it("needs four players", () => {
-    const t = new Table(people.slice(0, 3));
-    expect(t.act("mum", "start_game", { gameId: MURDER }).ok).toBe(false);
+describe("Ashworth Hall settings", () => {
+  it("blocks settings that cannot work and warns on lopsided ones", () => {
+    expect(checkSettings(4, defaultSettings(4)).ok).toBe(false);
+    expect(checkSettings(5, { ...defaultSettings(5), murderers: 3 }).ok).toBe(false);
+    expect(checkSettings(6, { ...defaultSettings(6), targets: 5 }).ok).toBe(false);
+    expect(checkSettings(9, { ...defaultSettings(9), murderers: 1, targets: 4 })).toMatchObject({ ok: true, warning: "Very hard for the murderers" });
+    expect(checkSettings(8, defaultSettings(8))).toEqual({ ok: true });
+    const t = new Table(make(5));
+    expect(t.act("mum", "start_game", { gameId: MURDER, options: { murderers: 3 } }).ok).toBe(false);
+    expect(new Table(make(4)).act("mum", "start_game", { gameId: MURDER }).ok).toBe(false);
   });
+});
 
-  it("deals booklets in stages, tells only the murderer, and never puts who in the public state", () => {
-    const t = new Table();
-    t.act("mum", "start_game", { gameId: MURDER });
-    expect(t.room.phase).toBe("briefing");
-    expect(t.act("kid", "next").ok).toBe(false);
-    t.act("mum", "next");
-    expect(t.room.phase).toBe("introductions");
-    const m = t.murdererId();
-    for (const p of people) {
-      expect(t.b(p.id).murderer).toBe(p.id === m);
-      expect(t.b(p.id).story).toBe("");
-      expect(t.b(p.id).clue).toBeNull();
+describe("Ashworth Hall themes", () => {
+  it("stores the chosen theme, falls back to the manor, and keeps house style", () => {
+    const t = new Table(make(6));
+    t.start(6, { theme: "wizards" });
+    expect(t.s.settings.theme).toBe("wizards");
+    const u = new Table(make(6));
+    u.start(6, { theme: "pirates" });
+    expect(u.s.settings.theme).toBe("manor");
+    for (const w of Object.values(THEMES)) {
+      const text = JSON.stringify(w) + w.killed("Ben", false) + w.silenced("Ben", true);
+      expect(text).not.toMatch(/\u2014|\u2013/);
+      expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
     }
-    expect(Object.keys(t.s.cast).sort()).toEqual(people.map((p) => p.id).sort());
+    expect(art("apprentice")).toBe("an apprentice");
+    expect(art("guest")).toBe("a guest");
+  });
+});
+
+describe("Ashworth Hall secrecy", () => {
+  it("tells murderers each other and their targets, tells guests nothing, and keeps it all out of public state", () => {
+    const t = new Table(make(8));
+    t.start(8, { murderers: 2, targets: 2 });
+    expect(t.murderers.length).toBe(2);
+    for (const m of t.murderers) {
+      expect(t.me(m).partners).toEqual(t.murderers.filter((x) => x !== m));
+      expect(t.me(m).targets!.length).toBe(2);
+      for (const x of t.me(m).targets!) expect(t.murderers).not.toContain(x);
+    }
+    for (const g of t.s.team.filter((id) => !t.murderers.includes(id))) {
+      expect(t.me(g)).toMatchObject({ role: "guest" });
+      expect(t.me(g).targets).toBeUndefined();
+      expect(t.me(g).partners).toBeUndefined();
+    }
     const text = JSON.stringify(t.room.state);
-    expect(text).not.toContain("murderer\":true");
-    expect(text).not.toContain("wool thread");
-    t.act("mum", "next", { round: 1 });
-    expect(t.room.phase).toBe("alibis");
-    for (const p of people) expect(t.b(p.id).story).toMatch(/^You were in the /);
-    expect(t.b(people[1].id).clue).toBeNull();
-    t.act("mum", "next", { round: 1 });
-    expect(t.room.phase).toBe("evidence");
-    for (const p of people) expect(t.b(p.id).clue).not.toBeNull();
-    t.act("mum", "next", { round: 1 });
+    expect(text).not.toContain("\"role\"");
+    expect(text).not.toContain("partners");
+    expect(t.s.endReveal).toBeNull();
+    // Night readiness is a count, never a list of names.
+    t.act(t.plain[0], "night_pick", { day: 1, action: "suspect", player: t.murderers[0] });
+    expect(t.s.nightReady).toBe(1);
+    expect(JSON.stringify(t.room.state)).not.toContain("suspect");
+  });
+});
+
+describe("Ashworth Hall nights", () => {
+  it("waits for the murderers to agree, then kills; a target cannot be killed; kills run out", () => {
+    const t = new Table(make(8));
+    t.start(8, { murderers: 2, targets: 2, killsEach: 1 });
+    const [a, b] = t.murderers;
+    const victim = t.plain[0];
+    expect(t.act(a, "night_pick", { day: 1, action: "kill", player: t.targets[0] }).ok).toBe(false);
+    expect(t.act(a, "night_pick", { day: 1, action: "kill", player: b }).ok).toBe(false);
+    expect(t.act(t.plain[1], "night_pick", { day: 1, action: "kill", player: victim }).ok).toBe(false);
+    for (const id of t.s.alive.filter((x) => x !== a && x !== b)) t.act(id, "night_pick", { day: 1, action: "suspect", player: a === id ? b : a });
+    t.act(a, "night_pick", { day: 1, action: "kill", player: victim });
+    t.act(b, "night_pick", { day: 1, action: "silence", player: victim });
+    expect(t.room.phase).toBe("night");
+    expect(t.me(a).partnerPicks![b]).toMatchObject({ action: "silence" });
+    t.act(b, "night_pick", { day: 1, action: "kill", player: victim });
+    expect(t.room.phase).toBe("day");
+    expect(t.s.morning).toEqual({ killed: victim, silenced: null, blackmail: false });
+    expect(t.s.alive).not.toContain(victim);
+    expect(t.s.killsLeft).toBe(1);
+    // Day 1 vote: a tie sends nobody away.
+    t.act("mum", "next", { day: 1 });
     expect(t.room.phase).toBe("vote");
+    const alive = t.s.alive;
+    alive.forEach((id, i) => t.act(id, "vote", { day: 1, player: alive[(i + 1) % alive.length] }));
+    expect(t.room.phase).toBe("reveal");
+    expect(t.s.votes[0].out).toBeNull();
+    expect(t.s.votes[0].entries.length).toBe(alive.length);
+    t.act("mum", "next", { day: 1 });
+    t.night({ action: "kill", player: t.plain[0] });
+    expect(t.s.killsLeft).toBe(0);
+    t.act("mum", "next", { day: 2 });
+    if (t.room.phase === "election") {
+      for (const id of t.s.alive) t.act(id, "elect", { round: 1, player: t.s.alive.find((x) => x !== id) });
+      if (t.room.phase === "election") for (const id of t.s.alive) t.act(id, "elect", { round: 2, player: t.s.election!.candidates!.find((x) => x !== id) });
+      t.act("mum", "next", { day: 2 });
+    }
+    expect(t.room.phase).toBe("vote");
+    t.act("mum", "count_votes", { day: 2 });
   });
 
-  it("catches the murderer on a clear vote and scores the innocents; a split vote lets them get away", () => {
-    const t = new Table();
-    t.act("mum", "start_game", { gameId: MURDER, options: { length: "normal" } });
-    for (let i = 0; i < 4; i++) t.act("mum", "next", { round: 1 });
-    expect(t.room.phase).toBe("vote");
-    const m = t.murdererId();
-    const someone = people.find((p) => p.id !== m)!.id;
-    expect(t.act(m, "vote", { round: 1, player: m }).ok).toBe(false);
-    for (const p of people) t.act(p.id, "vote", { round: 1, player: p.id === m ? someone : m });
-    expect(t.room.phase).toBe("reveal");
-    expect(t.s.last).toMatchObject({ caught: true, murdererId: m, accusedId: m });
-    for (const p of people) expect(t.s.scores[p.id]).toBe(p.id === m ? 0 : 3);
-    // Case 2: everyone votes for the next person round the table, a five-way tie.
-    t.act("mum", "next", { round: 1 });
-    for (let i = 0; i < 4; i++) t.act("mum", "next", { round: 2 });
-    const m2 = t.murdererId();
-    people.forEach((p, i) => t.act(p.id, "vote", { round: 2, player: people[(i + 1) % people.length].id }));
-    expect(t.s.last).toMatchObject({ caught: false, accusedId: null, murdererId: m2 });
-    expect(t.s.scores[m2]).toBe((m2 === m ? 0 : 3) + 5);
+  it("silences and blackmails in the open; a blackmailed guest must vote as told", () => {
+    const t = new Table(make(6));
+    t.start(6, { murderers: 1, targets: 1, cards: { pardon: false, showdown: false } });
+    const [m] = t.murderers;
+    t.night({ action: "silence", player: t.plain[0] });
+    expect(t.s.morning).toEqual({ killed: null, silenced: t.plain[0], blackmail: false });
+    expect(t.s.silenced).toBe(t.plain[0]);
+    t.act("mum", "next", { day: 1 });
+    const sent = t.plain[1];
+    t.voteOut(sent);
+    expect(t.s.votes[0]).toMatchObject({ out: sent, role: "guest" });
+    t.act("mum", "next", { day: 1 });
+    expect(t.s.silenced).toBeNull();
+    const victim = t.plain[0];
+    const forced = t.targets[0];
+    t.night({ action: "blackmail", player: victim, voteFor: forced });
+    expect(t.s.morning).toMatchObject({ blackmail: true });
+    expect(t.s.blackmailToday).toBe(true);
+    expect(t.me(victim).mustVote).toBe(forced);
+    expect(JSON.stringify(t.room.state)).not.toContain(victim + "\",\"mustVote");
+    t.act("mum", "next", { day: 2 });
+    expect(t.act(victim, "vote", { day: 2, player: m }).ok).toBe(false);
+    expect(t.act(victim, "vote", { day: 2, player: forced }).ok).toBe(true);
   });
+});
 
-  it("lets the host count the votes in for a quiet phone, and ends after the last case", () => {
-    const t = new Table();
-    t.act("mum", "start_game", { gameId: MURDER });
-    for (let i = 0; i < 4; i++) t.act("mum", "next", { round: 1 });
-    const m = t.murdererId();
-    for (const p of people.slice(0, 3)) t.act(p.id, "vote", { round: 1, player: p.id === m ? people.find((x) => x.id !== m)!.id : m });
-    expect(t.act("kid", "count_votes", { round: 1 }).ok).toBe(false);
-    t.act("mum", "count_votes", { round: 1 });
+describe("Ashworth Hall winning", () => {
+  it("murderers win when every target is framed; votes are revealed name by name", () => {
+    const t = new Table(make(6));
+    t.start(6, { murderers: 1, targets: 1, cards: { pardon: false, showdown: false } });
+    const [m] = t.murderers;
+    t.night({ action: "nothing" });
+    expect(t.s.morning).toEqual({ killed: null, silenced: null, blackmail: false });
+    t.act("mum", "next", { day: 1 });
+    const target = t.targets[0];
+    t.voteOut(target);
     expect(t.room.phase).toBe("reveal");
-    t.act("mum", "next", { round: 1 });
+    expect(t.s.votes[0]).toMatchObject({ out: target, role: "guest", target: true });
+    expect(t.s.winner).toBe("murderers");
+    expect(t.s.endReveal).toEqual({ murderers: [m], targets: [target] });
+    expect(t.s.scores[m]).toBe(5);
+    t.act("mum", "next", { day: 1 });
     expect(t.room.phase).toBe(RESULTS);
+  });
+
+  it("guests win when the murderer is sent away", () => {
+    const t = new Table(make(6));
+    t.start(6, { murderers: 1, targets: 1, cards: { pardon: false, showdown: false } });
+    const [m] = t.murderers;
+    t.night({ action: "nothing" });
+    t.act("mum", "next", { day: 1 });
+    t.voteOut(m);
+    expect(t.s.votes[0]).toMatchObject({ out: m, role: "murderer", target: false });
+    expect(t.s.winner).toBe("guests");
+    for (const id of t.s.team) expect(t.s.scores[id]).toBe(id === m ? 0 : 3);
+  });
+});
+
+describe("Ashworth Hall guest cards", () => {
+  it("elects a holder in two rounds on day 2, who can pardon once and must pass the card on leaving", () => {
+    const t = new Table(make(8));
+    t.start(8, { murderers: 2, targets: 2, cards: { kill: false, pardon: true, showdown: false } });
+    t.night({ action: "nothing" });
+    t.act("mum", "next", { day: 1 });
+    expect(t.room.phase).toBe("vote");
+    t.act("mum", "count_votes", { day: 1 });
+    expect(t.act("mum", "count_votes", { day: 1 }).ok).toBe(false);
+    t.voteOut(t.plain[0]);
+    t.act("mum", "next", { day: 1 });
+    t.night({ action: "nothing" });
+    t.act("mum", "next", { day: 2 });
+    expect(t.room.phase).toBe("election");
+    // Round 1: votes split three ways, so the top two go to a run-off.
+    const alive = t.s.alive;
+    const [x, y, z] = alive;
+    alive.forEach((id, i) => t.act(id, "elect", { round: 1, player: i < 3 ? (id === x ? y : x) : i < 5 ? (id === y ? z : y) : z === id ? x : z }));
+    expect(t.s.election!.round).toBe(2);
+    expect(t.s.election!.candidates!.length).toBeGreaterThanOrEqual(2);
+    const cands = t.s.election!.candidates!;
+    for (const id of alive) t.act(id, "elect", { round: 2, player: cands[0] === id ? cands[1] : cands[0] });
+    expect(t.room.phase).toBe("day");
+    const holder = t.s.cardHolder!;
+    expect(cands).toContain(holder);
+    // Pardon: the house votes someone out, the holder pardons them.
+    t.act("mum", "next", { day: 2 });
+    const accused = t.s.alive.find((id) => id !== holder)!;
+    t.voteOut(accused);
+    expect(t.room.phase).toBe("pardon");
+    expect(t.s.votes[t.s.votes.length - 1].role).toBeNull();
+    expect(t.act(accused, "pardon", { day: 2, use: true }).ok).toBe(false);
+    t.act(holder, "pardon", { day: 2, use: true });
+    expect(t.room.phase).toBe("reveal");
+    expect(t.s.alive).toContain(accused);
+    expect(t.s.votes[t.s.votes.length - 1]).toMatchObject({ pardoned: true, role: null });
+    expect(t.s.pardonUsed).toBe(true);
+    if (t.s.winner) return;
+    // The holder is sent away next day and must hand the card on before the game moves.
+    t.act("mum", "next", { day: 2 });
+    t.night({ action: "nothing" });
+    t.act("mum", "next", { day: 3 });
+    t.voteOut(holder);
+    expect(t.room.phase).toBe("reveal");
+    if (t.s.winner) return;
+    expect(t.s.passing).toBe(holder);
+    expect(t.act("mum", "next", { day: 3 }).ok).toBe(false);
+    t.act(holder, "pass_card", { player: t.s.alive[0] });
+    expect(t.s.cardHolder).toBe(t.s.alive[0]);
+    expect(t.act("mum", "next", { day: 3 }).ok).toBe(true);
+  });
+
+  it("showdown limits the vote to the holder and the player they name", () => {
+    const t = new Table(make(6));
+    t.start(6, { murderers: 1, targets: 1, cards: { kill: false, pardon: false, showdown: true } });
+    t.night({ action: "nothing" });
+    t.act("mum", "next", { day: 1 });
+    t.act("mum", "count_votes", { day: 1 });
+    t.voteOut(t.plain[0]);
+    if (t.s.winner) return;
+    t.act("mum", "next", { day: 1 });
+    t.night({ action: "nothing" });
+    t.act("mum", "next", { day: 2 });
+    for (const id of t.s.alive) t.act(id, "elect", { round: 1, player: t.s.alive.find((x) => x !== id && x !== "mum") ?? "mum" });
+    if (t.room.phase === "election") for (const id of t.s.alive) t.act(id, "elect", { round: 2, player: t.s.election!.candidates!.find((x) => x !== id) });
+    expect(t.room.phase).toBe("day");
+    const holder = t.s.cardHolder!;
+    const opp = t.s.alive.find((x) => x !== holder)!;
+    const other = t.s.alive.find((x) => x !== holder && x !== opp)!;
+    expect(t.act(other, "showdown", { day: 2, player: opp }).ok).toBe(false);
+    t.act(holder, "showdown", { day: 2, player: opp });
+    expect(t.room.phase).toBe("vote");
+    expect(t.s.votes[t.s.votes.length - 1].showdown).toEqual({ caller: holder, opponent: opp });
+    expect(t.act(other, "vote", { day: 2, player: t.s.alive.find((x) => x !== holder && x !== opp && x !== other) }).ok).toBe(false);
+    expect(t.act(other, "vote", { day: 2, player: opp }).ok).toBe(true);
+    const before = t.room.version;
+    t.act(holder, "showdown", { day: 2, player: opp });
+    expect(t.room.version).toBe(before);
+    expect(t.s.showdownUsed).toBe(true);
   });
 });
